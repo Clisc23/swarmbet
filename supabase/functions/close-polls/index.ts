@@ -133,8 +133,8 @@ serve(async (req) => {
 
         if (user) {
           const newCorrect = (user.correct_predictions || 0) + 1;
-          const newTotal = user.total_predictions || 0; // already incremented on vote
-          const newAccuracy = newTotal > 0 ? newCorrect / newTotal : 0;
+          const newTotal = user.total_predictions || 1; // fallback to 1 to avoid division by zero
+          const newAccuracy = newCorrect / newTotal;
 
           await supabase.from('users').update({
             swarm_points: user.swarm_points + bonusPoints,

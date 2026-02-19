@@ -111,11 +111,14 @@ serve(async (req) => {
     }
     if (newStreak > newMaxStreak) newMaxStreak = newStreak;
 
+    const newTotalPredictions = (user.total_predictions || 0) + 1;
+
     await supabase.from('users').update({
       swarm_points: newBalance,
       current_streak: newStreak,
       max_streak: newMaxStreak,
       last_voted_date: today,
+      total_predictions: newTotalPredictions,
     }).eq('id', user.id);
 
     await supabase.from('points_history').insert({
