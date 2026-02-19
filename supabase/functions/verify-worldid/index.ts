@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const APP_ID = "app_1d0e251e21c1f86b818f929aabfe5bc0";
+const APP_ID = "app_staging_9d76b538d092dff2d0252b5122a64585";
 const ACTION = "swarmbet-login";
 
 serve(async (req) => {
