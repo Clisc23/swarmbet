@@ -35,8 +35,9 @@ serve(async (req) => {
       .eq('nullifier_hash', nullifier_hash)
       .maybeSingle();
 
-    // Only verify with World ID API for NEW users (to avoid max_verifications_reached error)
-    if (!existingUser) {
+    // Only verify with World ID API for truly NEW users on their FIRST call (no username yet)
+    // When username is provided, the proof was already verified in the first call
+    if (!existingUser && !username) {
       const verifyRes = await fetch(`https://developer.worldcoin.org/api/v2/verify/${APP_ID}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
