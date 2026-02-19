@@ -1,6 +1,6 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { formatPoints } from '@/lib/helpers';
-import beeIcon from '@/assets/bee-icon.png';
+import { BeeIcon } from '@/components/BeeIcon';
 
 export function Header() {
   const { profile } = useAuth();
@@ -9,8 +9,8 @@ export function Header() {
     <header className="sticky top-0 z-40 glass-strong">
       <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg gradient-primary overflow-hidden">
-            <img src={beeIcon} alt="SwarmBet bee" className="h-6 w-6 object-contain" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg gradient-primary">
+            <BeeIcon className="h-4 w-4 text-primary-foreground" />
           </div>
           <span className="text-lg font-bold tracking-tight">
             Swarm<span className="text-primary">Bet</span>
