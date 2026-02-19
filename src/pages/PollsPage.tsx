@@ -62,6 +62,18 @@ export default function PollsPage() {
     }
   }, [queryClient]);
 
+  const handleDemoAction = useCallback(async (pollId: string, action: 'reopen' | 'activate') => {
+    try {
+      const { error } = await supabase.functions.invoke('demo-poll-action', { body: { poll_id: pollId, action } });
+      if (error) throw error;
+      toast.success(action === 'reopen' ? 'Poll reopened! 🔄' : 'Poll activated! ▶️');
+      queryClient.invalidateQueries({ queryKey: ['polls'] });
+      queryClient.invalidateQueries({ queryKey: ['user-votes'] });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update poll');
+    }
+  }, [queryClient]);
+
   return (
     <div className="min-h-screen pb-20">
       <Header />
@@ -84,7 +96,7 @@ export default function PollsPage() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-primary">Active</h2>
             <div className="space-y-3">
               {activePolls.map(p => (
-                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} onVote={setVotingPoll} onForceClose={handleForceClose} />
+                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} onVote={setVotingPoll} onForceClose={handleForceClose} onReopen={(id) => handleDemoAction(id, 'reopen')} onActivate={(id) => handleDemoAction(id, 'activate')} />
               ))}
             </div>
           </section>
@@ -95,7 +107,7 @@ export default function PollsPage() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Upcoming</h2>
             <div className="space-y-3">
               {upcomingPolls.map(p => (
-                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} />
+                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} onActivate={(id) => handleDemoAction(id, 'activate')} />
               ))}
             </div>
           </section>
@@ -106,7 +118,7 @@ export default function PollsPage() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Completed</h2>
             <div className="space-y-3">
               {closedPolls.map(p => (
-                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} />
+                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} onReopen={(id) => handleDemoAction(id, 'reopen')} />
               ))}
             </div>
           </section>
