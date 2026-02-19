@@ -255,7 +255,7 @@ export default function AuthPage() {
         <IDKitWidget
           app_id={WORLD_ID_APP_ID as `app_${string}`}
           action={WORLD_ID_ACTION}
-          verification_level={VerificationLevel.Orb}
+          verification_level={VerificationLevel.Device}
           handleVerify={handleVerify}
           onSuccess={handleWorldIdSuccess}
         >
