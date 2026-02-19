@@ -9,7 +9,7 @@ import { Shield, Users, Globe, Trophy } from 'lucide-react';
 import { BeeIcon } from '@/components/BeeIcon';
 import { toast } from 'sonner';
 
-const WORLD_ID_APP_ID = 'app_1d0e251e21c1f86b818f929aabfe5bc0';
+const WORLD_ID_APP_ID = 'app_staging_9d76b538d092dff2d0252b5122a64585';
 const WORLD_ID_ACTION = 'swarmbet-login';
 
 type Step = 'landing' | 'verify' | 'username';
