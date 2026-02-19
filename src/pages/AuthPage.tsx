@@ -1,108 +1,155 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { IDKitWidget, ISuccessResult, VerificationLevel } from '@worldcoin/idkit';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Zap, Shield, Users, Globe } from 'lucide-react';
 import { toast } from 'sonner';
-import { generateReferralCode } from '@/lib/helpers';
+
+const WORLD_ID_APP_ID = 'app_1d0e251e21c1f86b818f929aabfe5bc0';
+const WORLD_ID_ACTION = 'swarmbet-login';
 
 type Step = 'landing' | 'verify' | 'username';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { session, profile } = useAuth();
+  const { session, profile, refreshProfile } = useAuth();
   const [step, setStep] = useState<Step>('landing');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
-  const [tempAuthData, setTempAuthData] = useState<{ email: string; password: string } | null>(null);
+  const [worldIdProof, setWorldIdProof] = useState<ISuccessResult | null>(null);
 
-  // If user has a session but no profile, go straight to username step
   useEffect(() => {
-    if (session && !profile) {
-      setStep('username');
+    if (session && profile) {
+      navigate('/', { replace: true });
     }
-  }, [session, profile]);
+  }, [session, profile, navigate]);
 
-  const handleWorldIdVerify = async () => {
+  const handleVerify = async (result: ISuccessResult) => {
+    // This is called by IDKit before onSuccess to let you verify on backend
+    // We do the actual verification in onSuccess
+    console.log('IDKit verify callback:', result);
+  };
+
+  const handleWorldIdSuccess = async (result: ISuccessResult) => {
+    setWorldIdProof(result);
     setStep('verify');
-    // Mock World ID verification - simulate biometric scan
-    await new Promise((r) => setTimeout(r, 2000));
-    
-    // Generate mock credentials
-    const mockId = crypto.randomUUID().slice(0, 8);
-    const email = `worldid_${mockId}@swarmbets.local`;
-    const password = crypto.randomUUID();
-    
-    setTempAuthData({ email, password });
-    setStep('username');
+
+    try {
+      const res = await supabase.functions.invoke('verify-worldid', {
+        body: {
+          proof: result.proof,
+          nullifier_hash: result.nullifier_hash,
+          merkle_root: result.merkle_root,
+          verification_level: result.verification_level,
+        },
+      });
+
+      if (res.error) {
+        console.error('Verification error:', res.error);
+        toast.error('Verification failed. Please try again.');
+        setStep('landing');
+        return;
+      }
+
+      const data = res.data;
+
+      if (data.error) {
+        toast.error(data.error);
+        setStep('landing');
+        return;
+      }
+
+      if (data.needs_username) {
+        // New user — ask for username
+        setStep('username');
+        return;
+      }
+
+      // Returning user — sign in
+      if (data.token_hash && data.email) {
+        const { error: otpError } = await supabase.auth.verifyOtp({
+          type: 'email',
+          email: data.email,
+          token_hash: data.token_hash,
+        });
+
+        if (otpError) {
+          console.error('OTP error:', otpError);
+          toast.error('Failed to sign in. Please try again.');
+          setStep('landing');
+          return;
+        }
+
+        await refreshProfile();
+        toast.success('Welcome back! 🎉');
+        navigate('/');
+      }
+    } catch (err: any) {
+      console.error('Error:', err);
+      toast.error('Something went wrong. Please try again.');
+      setStep('landing');
+    }
   };
 
   const handleCreateAccount = async () => {
-    if (!username.trim()) return;
-    if (username.length < 3) {
+    if (!username.trim() || username.length < 3) {
       toast.error('Username must be at least 3 characters');
+      return;
+    }
+    if (!worldIdProof) {
+      toast.error('World ID verification required');
+      setStep('landing');
       return;
     }
 
     setLoading(true);
     try {
-      let userId = session?.user?.id;
-
-      // Only sign up if we don't already have a session
-      if (!userId && tempAuthData) {
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: tempAuthData.email,
-          password: tempAuthData.password,
-        });
-
-        if (signUpError) throw signUpError;
-        if (!signUpData.user) throw new Error('No user returned');
-        userId = signUpData.user.id;
-      }
-
-      if (!userId) throw new Error('No authenticated user');
-
-      // Create user profile
-      const nullifierHash = `mock_${crypto.randomUUID()}`;
-      const referralCode = generateReferralCode();
-
-      const { error: profileError } = await supabase.from('users').insert({
-        auth_uid: userId,
-        username: username.trim().toLowerCase(),
-        display_name: username.trim(),
-        nullifier_hash: nullifierHash,
-        referral_code: referralCode,
+      const res = await supabase.functions.invoke('verify-worldid', {
+        body: {
+          proof: worldIdProof.proof,
+          nullifier_hash: worldIdProof.nullifier_hash,
+          merkle_root: worldIdProof.merkle_root,
+          verification_level: worldIdProof.verification_level,
+          username: username.trim(),
+        },
       });
 
-      if (profileError) {
-        if (profileError.message.includes('unique')) {
-          toast.error('Username already taken');
+      if (res.error) {
+        toast.error('Failed to create account');
+        setLoading(false);
+        return;
+      }
+
+      const data = res.data;
+
+      if (data.error) {
+        toast.error(data.error);
+        setLoading(false);
+        return;
+      }
+
+      if (data.token_hash && data.email) {
+        const { error: otpError } = await supabase.auth.verifyOtp({
+          type: 'email',
+          email: data.email,
+          token_hash: data.token_hash,
+        });
+
+        if (otpError) {
+          console.error('OTP error:', otpError);
+          toast.error('Account created but sign-in failed. Try again.');
+          setStep('landing');
           setLoading(false);
           return;
         }
-        throw profileError;
+
+        await refreshProfile();
+        toast.success('Welcome to SwarmBet! 🎉');
+        navigate('/');
       }
-
-      // Award signup bonus
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_uid', userId)
-        .single();
-
-      if (userData) {
-        await supabase.from('points_history').insert({
-          user_id: userData.id,
-          amount: 100,
-          type: 'signup',
-          description: 'Welcome bonus',
-        });
-      }
-
-      toast.success('Welcome to SwarmBet! 🎉');
-      navigate('/');
     } catch (err: any) {
       toast.error(err.message || 'Something went wrong');
     } finally {
@@ -120,18 +167,12 @@ export default function AuthPage() {
             </div>
           </div>
           <div>
-            <h2 className="text-xl font-bold">Verifying Humanity</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Scanning World ID biometric proof...
-            </p>
+            <h2 className="text-xl font-bold">Verifying with World ID</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Checking your proof of personhood...</p>
           </div>
           <div className="flex gap-1">
             {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-2 w-2 rounded-full bg-primary animate-pulse"
-                style={{ animationDelay: `${i * 0.3}s` }}
-              />
+              <div key={i} className="h-2 w-2 rounded-full bg-primary animate-pulse" style={{ animationDelay: `${i * 0.3}s` }} />
             ))}
           </div>
         </div>
@@ -150,12 +191,9 @@ export default function AuthPage() {
             <h2 className="text-2xl font-bold">Verified Human ✓</h2>
             <p className="mt-1 text-sm text-muted-foreground">Choose your SwarmBet identity</p>
           </div>
-
           <div className="space-y-4">
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Username
-              </label>
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Username</label>
               <Input
                 value={username}
                 onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
@@ -165,7 +203,6 @@ export default function AuthPage() {
               />
               <p className="mt-1 text-xs text-muted-foreground">3-20 characters, letters, numbers, underscores</p>
             </div>
-
             <Button
               onClick={handleCreateAccount}
               disabled={loading || username.length < 3}
@@ -179,18 +216,15 @@ export default function AuthPage() {
     );
   }
 
-  // Landing
   return (
     <div className="flex min-h-screen flex-col items-center justify-between px-6 py-12">
       <div />
-      
       <div className="flex flex-col items-center gap-8 text-center">
         <div className="relative">
           <div className="flex h-20 w-20 items-center justify-center rounded-2xl gradient-primary glow-lg">
             <Zap className="h-10 w-10 text-primary-foreground" />
           </div>
         </div>
-
         <div>
           <h1 className="text-4xl font-bold tracking-tight">
             Swarm<span className="text-primary">Bet</span>
@@ -199,7 +233,6 @@ export default function AuthPage() {
             Predict sports outcomes with verified humans. Earn points. Share the prize pool.
           </p>
         </div>
-
         <div className="flex gap-6 text-center">
           {[
             { icon: Shield, label: 'Verified', desc: 'Sybil-proof' },
@@ -218,13 +251,23 @@ export default function AuthPage() {
       </div>
 
       <div className="w-full max-w-sm space-y-3">
-        <Button
-          onClick={handleWorldIdVerify}
-          className="w-full rounded-xl py-6 text-base font-bold gradient-primary text-primary-foreground hover:opacity-90 glow-md"
+        <IDKitWidget
+          app_id={WORLD_ID_APP_ID as `app_${string}`}
+          action={WORLD_ID_ACTION}
+          verification_level={VerificationLevel.Orb}
+          handleVerify={handleVerify}
+          onSuccess={handleWorldIdSuccess}
         >
-          <Globe className="mr-2 h-5 w-5" />
-          Verify with World ID
-        </Button>
+          {({ open }) => (
+            <Button
+              onClick={open}
+              className="w-full rounded-xl py-6 text-base font-bold gradient-primary text-primary-foreground hover:opacity-90 glow-md"
+            >
+              <Globe className="mr-2 h-5 w-5" />
+              Verify with World ID
+            </Button>
+          )}
+        </IDKitWidget>
         <p className="text-center text-[10px] text-muted-foreground">
           One person = one account. Powered by proof of personhood.
         </p>
