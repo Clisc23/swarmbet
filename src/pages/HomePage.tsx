@@ -38,7 +38,15 @@ export default function HomePage() {
       });
 
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (data?.error) {
+        if (data.error === 'Already voted on this poll') {
+          toast.info('You already voted on this poll! 🗳️');
+          setVotingPoll(null);
+          queryClient.invalidateQueries({ queryKey: ['user-votes'] });
+          return;
+        }
+        throw new Error(data.error);
+      }
 
       toast.success(`+${formatPoints(data.points_earned)} points! 🎯`, {
         description: `Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''} 🔥`,
