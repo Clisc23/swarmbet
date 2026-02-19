@@ -23,38 +23,40 @@ serve(async (req) => {
       });
     }
 
-    // Verify proof with World ID Cloud API (v1/v2 format)
-    const verifyRes = await fetch(`https://developer.worldcoin.org/api/v2/verify/${APP_ID}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: ACTION,
-        proof,
-        nullifier_hash,
-        merkle_root,
-        verification_level,
-      }),
-    });
-
-    if (!verifyRes.ok) {
-      const errBody = await verifyRes.json().catch(() => ({}));
-      console.error('World ID verification failed:', errBody);
-      return new Response(JSON.stringify({ error: 'World ID verification failed', detail: errBody }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Proof verified — now handle user account
+    // Initialize Supabase client first to check for existing users
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Check if this nullifier_hash already has an account
+    // Check if this nullifier_hash already has an account BEFORE calling World ID API
     const { data: existingUser } = await supabase
       .from('users')
       .select('auth_uid')
       .eq('nullifier_hash', nullifier_hash)
       .maybeSingle();
+
+    // Only verify with World ID API for NEW users (to avoid max_verifications_reached error)
+    if (!existingUser) {
+      const verifyRes = await fetch(`https://developer.worldcoin.org/api/v2/verify/${APP_ID}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: ACTION,
+          proof,
+          nullifier_hash,
+          merkle_root,
+          verification_level,
+        }),
+      });
+
+      if (!verifyRes.ok) {
+        const errBody = await verifyRes.json().catch(() => ({}));
+        console.error('World ID verification failed:', errBody);
+        return new Response(JSON.stringify({ error: 'World ID verification failed', detail: errBody }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
 
     const email = `worldid_${nullifier_hash.slice(0, 16)}@swarmbets.local`;
 
