@@ -42,6 +42,7 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
     );
   }
   
+  // Only redirect if user has BOTH session AND profile
   if (session && profile) {
     return <Navigate to="/" replace />;
   }

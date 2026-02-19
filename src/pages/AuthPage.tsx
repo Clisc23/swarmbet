@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Zap, Shield, Users, Globe } from 'lucide-react';
@@ -11,10 +12,18 @@ type Step = 'landing' | 'verify' | 'username';
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const { session, profile } = useAuth();
   const [step, setStep] = useState<Step>('landing');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [tempAuthData, setTempAuthData] = useState<{ email: string; password: string } | null>(null);
+
+  // If user has a session but no profile, go straight to username step
+  useEffect(() => {
+    if (session && !profile) {
+      setStep('username');
+    }
+  }, [session, profile]);
 
   const handleWorldIdVerify = async () => {
     setStep('verify');
@@ -31,7 +40,7 @@ export default function AuthPage() {
   };
 
   const handleCreateAccount = async () => {
-    if (!tempAuthData || !username.trim()) return;
+    if (!username.trim()) return;
     if (username.length < 3) {
       toast.error('Username must be at least 3 characters');
       return;
@@ -39,21 +48,28 @@ export default function AuthPage() {
 
     setLoading(true);
     try {
-      // Sign up
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: tempAuthData.email,
-        password: tempAuthData.password,
-      });
+      let userId = session?.user?.id;
 
-      if (signUpError) throw signUpError;
-      if (!signUpData.user) throw new Error('No user returned');
+      // Only sign up if we don't already have a session
+      if (!userId && tempAuthData) {
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: tempAuthData.email,
+          password: tempAuthData.password,
+        });
+
+        if (signUpError) throw signUpError;
+        if (!signUpData.user) throw new Error('No user returned');
+        userId = signUpData.user.id;
+      }
+
+      if (!userId) throw new Error('No authenticated user');
 
       // Create user profile
       const nullifierHash = `mock_${crypto.randomUUID()}`;
       const referralCode = generateReferralCode();
 
       const { error: profileError } = await supabase.from('users').insert({
-        auth_uid: signUpData.user.id,
+        auth_uid: userId,
         username: username.trim().toLowerCase(),
         display_name: username.trim(),
         nullifier_hash: nullifierHash,
@@ -73,7 +89,7 @@ export default function AuthPage() {
       const { data: userData } = await supabase
         .from('users')
         .select('id')
-        .eq('auth_uid', signUpData.user.id)
+        .eq('auth_uid', userId)
         .single();
 
       if (userData) {
