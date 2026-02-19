@@ -1,6 +1,6 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { formatPoints } from '@/lib/helpers';
-import { Zap } from 'lucide-react';
+
 
 export function Header() {
   const { profile } = useAuth();
@@ -10,7 +10,7 @@ export function Header() {
       <div className="mx-auto flex max-w-md items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg gradient-primary">
-            <Zap className="h-4 w-4 text-primary-foreground" />
+            <span className="text-base leading-none">🐝</span>
           </div>
           <span className="text-lg font-bold tracking-tight">
             Swarm<span className="text-primary">Bet</span>
