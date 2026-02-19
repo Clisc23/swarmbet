@@ -15,7 +15,7 @@ import type { Tables } from '@/integrations/supabase/types';
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
 
 export default function HomePage() {
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const { data: polls, isLoading } = usePolls();
   const { data: userVotes } = useUserVotes(profile?.id);
   const [votingPoll, setVotingPoll] = useState<Poll | null>(null);
@@ -56,12 +56,13 @@ export default function HomePage() {
       queryClient.invalidateQueries({ queryKey: ['polls'] });
       queryClient.invalidateQueries({ queryKey: ['user-votes'] });
       queryClient.invalidateQueries({ queryKey: ['points-history'] });
+      refreshProfile();
     } catch (err: any) {
       toast.error(err.message || 'Failed to submit vote');
     } finally {
       setSubmitting(false);
     }
-  }, [votingPoll, queryClient]);
+  }, [votingPoll, queryClient, refreshProfile]);
 
   const campaignDay = polls?.find(p => p.status === 'active')?.day_number || 0;
 
