@@ -5,7 +5,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Zap, Shield, Users, Globe } from 'lucide-react';
+import { Shield, Users, Globe, Trophy } from 'lucide-react';
+import { BeeIcon } from '@/components/BeeIcon';
 import { toast } from 'sonner';
 
 const WORLD_ID_APP_ID = 'app_1d0e251e21c1f86b818f929aabfe5bc0';
@@ -222,7 +223,7 @@ export default function AuthPage() {
       <div className="flex flex-col items-center gap-8 text-center">
         <div className="relative">
           <div className="flex h-20 w-20 items-center justify-center rounded-2xl gradient-primary glow-lg">
-            <Zap className="h-10 w-10 text-primary-foreground" />
+            <BeeIcon className="h-10 w-10 text-primary-foreground" />
           </div>
         </div>
         <div>
@@ -237,7 +238,7 @@ export default function AuthPage() {
           {[
             { icon: Shield, label: 'Verified', desc: 'Sybil-proof' },
             { icon: Users, label: 'Swarm', desc: 'Crowd wisdom' },
-            { icon: Zap, label: '3 ETH', desc: 'Prize pool' },
+            { icon: Trophy, label: '3 ETH', desc: 'Prize pool' },
           ].map((item) => (
             <div key={item.label} className="flex flex-col items-center gap-1.5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary">
