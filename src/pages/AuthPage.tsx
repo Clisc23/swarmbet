@@ -70,10 +70,9 @@ export default function AuthPage() {
       }
 
       // Returning user — sign in
-      if (data.token_hash && data.email) {
+      if (data.token_hash) {
         const { error: otpError } = await supabase.auth.verifyOtp({
           type: 'email',
-          email: data.email,
           token_hash: data.token_hash,
         });
 
@@ -132,10 +131,9 @@ export default function AuthPage() {
         return;
       }
 
-      if (data.token_hash && data.email) {
+      if (data.token_hash) {
         const { error: otpError } = await supabase.auth.verifyOtp({
           type: 'email',
-          email: data.email,
           token_hash: data.token_hash,
         });
 
