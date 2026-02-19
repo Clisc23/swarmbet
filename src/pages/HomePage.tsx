@@ -1,0 +1,169 @@
+import { useState, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { usePolls, useUserVotes } from '@/hooks/usePolls';
+import { Header } from '@/components/Header';
+import { BottomNav } from '@/components/BottomNav';
+import { PollCard } from '@/components/PollCard';
+import { VoteSheet } from '@/components/VoteSheet';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { Flame, Target, TrendingUp, Calendar } from 'lucide-react';
+import { formatPoints } from '@/lib/helpers';
+import type { Tables } from '@/integrations/supabase/types';
+
+type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
+
+export default function HomePage() {
+  const { profile } = useAuth();
+  const { data: polls, isLoading } = usePolls();
+  const { data: userVotes } = useUserVotes(profile?.id);
+  const [votingPoll, setVotingPoll] = useState<Poll | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const queryClient = useQueryClient();
+
+  const votedPollMap = new Map(
+    (userVotes || []).map((v) => [v.poll_id, v.option_id])
+  );
+
+  const activePoll = polls?.find((p) => p.status === 'active');
+  const recentPolls = polls?.filter((p) => p.status !== 'upcoming').slice(0, 5) || [];
+
+  const handleSubmitVote = useCallback(async (optionId: string, confidence: string) => {
+    if (!votingPoll) return;
+    setSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('submit-vote', {
+        body: { poll_id: votingPoll.id, option_id: optionId, confidence },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(`+${formatPoints(data.points_earned)} points! 🎯`, {
+        description: `Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''} 🔥`,
+      });
+
+      setVotingPoll(null);
+      queryClient.invalidateQueries({ queryKey: ['polls'] });
+      queryClient.invalidateQueries({ queryKey: ['user-votes'] });
+      queryClient.invalidateQueries({ queryKey: ['points-history'] });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to submit vote');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [votingPoll, queryClient]);
+
+  const campaignDay = polls?.find(p => p.status === 'active')?.day_number || 0;
+
+  return (
+    <div className="min-h-screen pb-20">
+      <Header />
+
+      <main className="mx-auto max-w-md px-4 py-4 space-y-6">
+        {/* Stats strip */}
+        {profile && (
+          <div className="grid grid-cols-4 gap-2">
+            {[
+              { icon: Flame, label: 'Streak', value: `${profile.current_streak || 0}d`, color: 'text-primary' },
+              { icon: Target, label: 'Accuracy', value: `${((profile.accuracy_score || 0) * 100).toFixed(0)}%`, color: 'text-primary' },
+              { icon: TrendingUp, label: 'Votes', value: String(profile.total_predictions || 0), color: 'text-foreground' },
+              { icon: Calendar, label: 'Day', value: `${campaignDay}/30`, color: 'text-foreground' },
+            ].map((stat) => (
+              <div key={stat.label} className="glass rounded-xl p-2.5 text-center">
+                <stat.icon className={`mx-auto h-4 w-4 mb-1 ${stat.color}`} />
+                <p className="font-mono text-sm font-bold">{stat.value}</p>
+                <p className="text-[9px] text-muted-foreground uppercase">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Active Poll */}
+        {activePoll && (
+          <section>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Today's Prediction
+            </h2>
+            <PollCard
+              poll={activePoll}
+              userVotedOptionId={votedPollMap.get(activePoll.id)}
+              onVote={setVotingPoll}
+            />
+          </section>
+        )}
+
+        {/* Prize pool banner */}
+        <div className="glass rounded-2xl p-4 text-center">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Campaign Prize Pool</p>
+          <p className="text-3xl font-bold text-primary text-glow">3 ETH</p>
+          <p className="text-xs text-muted-foreground mt-1">Top 10% of leaderboard shares the pool</p>
+          <div className="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full rounded-full gradient-primary transition-all duration-500"
+              style={{ width: `${Math.min((campaignDay / 30) * 100, 100)}%` }}
+            />
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground">{30 - campaignDay} days remaining</p>
+        </div>
+
+        {/* Recent Polls */}
+        {recentPolls.length > 0 && (
+          <section>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Recent Polls
+            </h2>
+            <div className="space-y-3">
+              {recentPolls.map((poll) => (
+                <PollCard
+                  key={poll.id}
+                  poll={poll}
+                  userVotedOptionId={votedPollMap.get(poll.id)}
+                  onVote={setVotingPoll}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {isLoading && (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="glass rounded-2xl p-4 animate-pulse">
+                <div className="h-4 w-32 rounded bg-muted mb-3" />
+                <div className="h-3 w-full rounded bg-muted mb-2" />
+                <div className="h-10 w-full rounded-xl bg-muted mb-2" />
+                <div className="h-10 w-full rounded-xl bg-muted" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!isLoading && !activePoll && recentPolls.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary">
+              <Calendar className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold">No polls yet</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Check back soon — daily predictions are coming!
+            </p>
+          </div>
+        )}
+      </main>
+
+      <BottomNav />
+
+      {/* Vote Sheet */}
+      {votingPoll && (
+        <VoteSheet
+          poll={votingPoll}
+          onSubmit={handleSubmitVote}
+          onClose={() => setVotingPoll(null)}
+          loading={submitting}
+        />
+      )}
+    </div>
+  );
+}
