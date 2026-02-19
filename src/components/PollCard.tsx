@@ -10,12 +10,15 @@ interface PollCardProps {
   userVotedOptionId?: string | null;
   onVote?: (poll: Poll) => void;
   onForceClose?: (pollId: string) => void;
+  onReopen?: (pollId: string) => void;
+  onActivate?: (pollId: string) => void;
 }
 
-export function PollCard({ poll, userVotedOptionId, onVote, onForceClose }: PollCardProps) {
+export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReopen, onActivate }: PollCardProps) {
   const hasVoted = !!userVotedOptionId;
   const isActive = poll.status === 'active';
   const isClosed = poll.status === 'closed' || poll.status === 'resolved';
+  const isUpcoming = poll.status === 'upcoming';
   const sortedOptions = [...(poll.poll_options || [])].sort((a, b) => a.display_order - b.display_order);
 
   return (
@@ -106,6 +109,22 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose }: Poll
               className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive hover:bg-destructive/20 transition-colors"
             >
               Close Now ⏩
+            </button>
+          )}
+          {isClosed && onReopen && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onReopen(poll.id); }}
+              className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+            >
+              Reopen 🔄
+            </button>
+          )}
+          {isUpcoming && onActivate && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onActivate(poll.id); }}
+              className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors"
+            >
+              Open Now ▶️
             </button>
           )}
           {isActive && (
