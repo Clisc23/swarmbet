@@ -50,6 +50,18 @@ export default function PollsPage() {
     }
   }, [votingPoll, queryClient]);
 
+  const handleForceClose = useCallback(async (pollId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } });
+      if (error) throw error;
+      toast.success('Poll closed & resolved! 🎉');
+      queryClient.invalidateQueries({ queryKey: ['polls'] });
+      queryClient.invalidateQueries({ queryKey: ['user-votes'] });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to close poll');
+    }
+  }, [queryClient]);
+
   return (
     <div className="min-h-screen pb-20">
       <Header />
@@ -72,7 +84,7 @@ export default function PollsPage() {
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-primary">Active</h2>
             <div className="space-y-3">
               {activePolls.map(p => (
-                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} onVote={setVotingPoll} />
+                <PollCard key={p.id} poll={p} userVotedOptionId={votedPollMap.get(p.id)} onVote={setVotingPoll} onForceClose={handleForceClose} />
               ))}
             </div>
           </section>

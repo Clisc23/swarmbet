@@ -18,12 +18,19 @@ serve(async (req) => {
 
     const now = new Date().toISOString();
 
-    // 1. Find active polls that have passed their closes_at time
-    const { data: expiredPolls, error: pollsError } = await supabase
-      .from('polls')
-      .select('*, poll_options(*)')
-      .eq('status', 'active')
-      .lte('closes_at', now);
+    // Support force-closing a specific poll for demo purposes
+    let body: any = {};
+    try { body = await req.json(); } catch { /* empty body is fine */ }
+    const forcePollId = body?.force_poll_id;
+
+    let query = supabase.from('polls').select('*, poll_options(*)').eq('status', 'active');
+    if (forcePollId) {
+      query = query.eq('id', forcePollId);
+    } else {
+      query = query.lte('closes_at', now);
+    }
+
+    const { data: expiredPolls, error: pollsError } = await query;
 
     if (pollsError) throw pollsError;
     if (!expiredPolls || expiredPolls.length === 0) {

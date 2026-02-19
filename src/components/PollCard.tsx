@@ -9,9 +9,10 @@ interface PollCardProps {
   poll: Poll;
   userVotedOptionId?: string | null;
   onVote?: (poll: Poll) => void;
+  onForceClose?: (pollId: string) => void;
 }
 
-export function PollCard({ poll, userVotedOptionId, onVote }: PollCardProps) {
+export function PollCard({ poll, userVotedOptionId, onVote, onForceClose }: PollCardProps) {
   const hasVoted = !!userVotedOptionId;
   const isActive = poll.status === 'active';
   const isClosed = poll.status === 'closed' || poll.status === 'resolved';
@@ -98,17 +99,27 @@ export function PollCard({ poll, userVotedOptionId, onVote }: PollCardProps) {
           <Users className="h-3 w-3" />
           <span>{poll.total_votes || 0} votes</span>
         </div>
-        {isActive && (
-          <div className="flex items-center gap-1 text-primary">
-            <Clock className="h-3 w-3" />
-            <span>{getTimeRemaining(poll.closes_at)}</span>
-          </div>
-        )}
-        {hasVoted && (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-            +1,000 pts
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isActive && onForceClose && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onForceClose(poll.id); }}
+              className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold text-destructive hover:bg-destructive/20 transition-colors"
+            >
+              Close Now ⏩
+            </button>
+          )}
+          {isActive && (
+            <div className="flex items-center gap-1 text-primary">
+              <Clock className="h-3 w-3" />
+              <span>{getTimeRemaining(poll.closes_at)}</span>
+            </div>
+          )}
+          {hasVoted && (
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              +1,000 pts
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
