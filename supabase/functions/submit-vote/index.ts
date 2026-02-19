@@ -79,11 +79,17 @@ serve(async (req) => {
       confidence,
     });
 
-    // Increment vote count
-    await supabase.rpc('increment_vote_count', { p_option_id: option_id }).catch(() => {
-      // Fallback: direct update
-      return supabase.from('poll_options').update({ vote_count: (poll.total_votes || 0) + 1 }).eq('id', option_id);
-    });
+    // Increment vote count on the selected option
+    const { data: currentOption } = await supabase
+      .from('poll_options')
+      .select('vote_count')
+      .eq('id', option_id)
+      .single();
+    
+    await supabase
+      .from('poll_options')
+      .update({ vote_count: (currentOption?.vote_count || 0) + 1 })
+      .eq('id', option_id);
 
     // Increment total votes
     await supabase.from('polls').update({ total_votes: (poll.total_votes || 0) + 1 }).eq('id', poll_id);
