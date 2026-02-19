@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.claim-referral]
 verify_jwt = false
+
+[functions.verify-worldid]
+verify_jwt = false
