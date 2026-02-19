@@ -1,0 +1,7 @@
+project_id = "lchhalwiijvgaffgfmjx"
+
+[functions.submit-vote]
+verify_jwt = false
+
+[functions.claim-referral]
+verify_jwt = false
