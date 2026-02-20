@@ -31,6 +31,16 @@ serve(async (req) => {
       });
     }
 
+    // Auto-assign next available day_number
+    const { data: maxRow } = await supabase
+      .from('polls')
+      .select('day_number')
+      .order('day_number', { ascending: false })
+      .limit(1)
+      .single();
+    const nextDay = (maxRow?.day_number || 0) + 1;
+    const dayNumber = poll.day_number || nextDay;
+
     // Create the poll
     const { data: newPoll, error: pollError } = await supabase
       .from('polls')
@@ -38,7 +48,7 @@ serve(async (req) => {
         question: poll.question,
         description: poll.description || null,
         category: poll.category,
-        day_number: poll.day_number,
+        day_number: dayNumber,
         opens_at: poll.opens_at,
         closes_at: poll.closes_at,
         status: poll.status || 'upcoming',
