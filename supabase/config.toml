@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.verify-worldid]
 verify_jwt = false
+
+[functions.admin-verify]
+verify_jwt = false
+
+[functions.polymarket-search]
+verify_jwt = false
+
+[functions.admin-create-poll]
+verify_jwt = false
