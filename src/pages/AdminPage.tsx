@@ -436,29 +436,61 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
                 {/* Import entire event as a poll */}
                 <div className="border-t border-border/50 pt-3">
                   <Button size="sm" variant="default" onClick={() => {
-                    // Take top 4 markets by volume, use their questions as options
-                    const topMarkets = [...event.markets]
-                      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+                    // Sort markets by "Yes" price (descending) and take top 4
+                    const marketsWithYesPrice = event.markets.map((m) => {
+                      let prices: number[] = [];
+                      try { prices = JSON.parse(m.outcomePrices || '[]').map(Number); } catch {}
+                      return { ...m, yesPrice: prices[0] || 0 };
+                    });
+                    const topMarkets = marketsWithYesPrice
+                      .sort((a, b) => b.yesPrice - a.yesPrice)
                       .slice(0, 4);
                     if (topMarkets.length < 2) {
                       toast.error('Event needs at least 2 markets to import');
                       return;
                     }
+
+                    // Transform event title to a question
+                    const titleToQuestion = (title: string) => {
+                      const t = title.trim();
+                      if (t.endsWith('?')) return t;
+                      // "X Winner" → "Who will win X?"
+                      const winnerMatch = t.match(/^(.+?)\s+Winner$/i);
+                      if (winnerMatch) return `Who will win the ${winnerMatch[1]}?`;
+                      // "Next X" → "Who will be the next X?"
+                      const nextMatch = t.match(/^Next\s+(.+)$/i);
+                      if (nextMatch) return `Who will be the next ${nextMatch[1]}?`;
+                      return `Who will win ${t}?`;
+                    };
+
+                    // Extract short option name from market question
+                    // "Will Spain win the 2026 FIFA World Cup?" → "Spain"
+                    const extractOptionName = (question: string) => {
+                      const q = question.replace(/\?$/, '').trim();
+                      const willMatch = q.match(/^Will\s+(.+?)\s+win\b/i);
+                      if (willMatch) return willMatch[1];
+                      const willBe = q.match(/^Will\s+(.+?)\s+be\b/i);
+                      if (willBe) return willBe[1];
+                      // Fallback: strip "Will " prefix
+                      const willPrefix = q.match(/^Will\s+(.+)/i);
+                      if (willPrefix) return willPrefix[1];
+                      return q;
+                    };
+
                     onImport({
-                      question: event.title,
+                      question: titleToQuestion(event.title),
                       description: event.description?.slice(0, 500) || '',
                       category: 'prediction',
                       polymarket_event_id: event.id,
                       polymarket_slug: event.slug,
-                      options: topMarkets.map((m) => {
-                        let prices: number[] = [];
-                        try { prices = JSON.parse(m.outcomePrices || '[]').map(Number); } catch {}
-                        // Use the "Yes" price (first outcome) as the polymarket_price
-                        return { label: m.question, flag_emoji: '', polymarket_price: prices[0] || null };
-                      }),
+                      options: topMarkets.map((m) => ({
+                        label: extractOptionName(m.question),
+                        flag_emoji: '',
+                        polymarket_price: m.yesPrice || null,
+                      })),
                     });
                   }}>
-                    <Plus className="h-3 w-3 mr-1" /> Import Event as Poll (top {Math.min(event.markets.length, 4)} markets)
+                    <Plus className="h-3 w-3 mr-1" /> Import Event as Poll (top {Math.min(event.markets.length, 4)} odds)
                   </Button>
                 </div>
               </div>
