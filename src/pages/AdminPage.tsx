@@ -425,13 +425,42 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
                         })}>
                           <Plus className="h-3 w-3 mr-1" /> Import as Poll
                         </Button>
-                        <a href={`https://polymarket.com/event/${event.slug}`} target="_blank" rel="noopener noreferrer">
+                         <a href={`https://polymarket.com/event/${event.slug}`} target="_blank" rel="noopener noreferrer">
                           <Button size="sm" variant="ghost"><ExternalLink className="h-3 w-3" /></Button>
                         </a>
                       </div>
                     </div>
                   );
                 })}
+
+                {/* Import entire event as a poll */}
+                <div className="border-t border-border/50 pt-3">
+                  <Button size="sm" variant="default" onClick={() => {
+                    // Take top 4 markets by volume, use their questions as options
+                    const topMarkets = [...event.markets]
+                      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+                      .slice(0, 4);
+                    if (topMarkets.length < 2) {
+                      toast.error('Event needs at least 2 markets to import');
+                      return;
+                    }
+                    onImport({
+                      question: event.title,
+                      description: event.description?.slice(0, 500) || '',
+                      category: 'prediction',
+                      polymarket_event_id: event.id,
+                      polymarket_slug: event.slug,
+                      options: topMarkets.map((m) => {
+                        let prices: number[] = [];
+                        try { prices = JSON.parse(m.outcomePrices || '[]').map(Number); } catch {}
+                        // Use the "Yes" price (first outcome) as the polymarket_price
+                        return { label: m.question, flag_emoji: '', polymarket_price: prices[0] || null };
+                      }),
+                    });
+                  }}>
+                    <Plus className="h-3 w-3 mr-1" /> Import Event as Poll (top {Math.min(event.markets.length, 4)} markets)
+                  </Button>
+                </div>
               </div>
             )}
           </Card>
