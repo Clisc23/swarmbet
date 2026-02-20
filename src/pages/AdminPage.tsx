@@ -273,7 +273,15 @@ function CreatePoll({ password, prefill, onCreated }: { password: string; prefil
         </div>
         <div>
           <Label>Category *</Label>
-          <Input value={form.category} onChange={(e) => updateField('category', e.target.value)} placeholder="sports" />
+          <select
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={form.category}
+            onChange={(e) => updateField('category', e.target.value)}
+          >
+            {['soccer','tennis','golf','f1','cricket','cycling','basketball','esports','other'].map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
         <div>
           <Label>Day Number *</Label>
@@ -418,7 +426,7 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
                         <Button size="sm" variant="outline" onClick={() => onImport({
                           question: market.question,
                           description: event.description?.slice(0, 500) || '',
-                          category: 'prediction',
+                          category: 'other',
                           polymarket_event_id: event.id,
                           polymarket_slug: event.slug,
                           options: outcomes.map((o, i) => ({ label: o, flag_emoji: '', polymarket_price: prices[i] || null })),
@@ -480,7 +488,7 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
                     onImport({
                       question: titleToQuestion(event.title),
                       description: event.description?.slice(0, 500) || '',
-                      category: 'prediction',
+                      category: 'other',
                       polymarket_event_id: event.id,
                       polymarket_slug: event.slug,
                       options: topMarkets.map((m) => ({
