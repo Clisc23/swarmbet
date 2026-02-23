@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Session, User } from '@supabase/supabase-js';
 import type { Tables } from '@/integrations/supabase/types';
-import { connectWithJwt } from '@/lib/web3auth';
+import { connectWithJwt, getWeb3Auth, getWalletAddress } from '@/lib/web3auth';
 
 type UserProfile = Tables<'users'>;
 
@@ -38,7 +38,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [web3authJwt, setWeb3authJwt] = useState<string | null>(null);
+  const [web3authJwt, setWeb3authJwtState] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('web3auth_jwt'); } catch { return null; }
+  });
+
+  const setWeb3authJwt = (jwt: string | null) => {
+    setWeb3authJwtState(jwt);
+    try {
+      if (jwt) sessionStorage.setItem('web3auth_jwt', jwt);
+      else sessionStorage.removeItem('web3auth_jwt');
+    } catch { /* ignore */ }
+  };
 
   const silentConnectWallet = async (jwt: string) => {
     try {
@@ -72,10 +82,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Auto-connect wallet when JWT is available and profile loaded
+  // Also try to recover an existing Web3Auth session on mount
   useEffect(() => {
-    if (profile && web3authJwt && !walletAddress) {
-      silentConnectWallet(web3authJwt);
-    }
+    if (!profile) return;
+    if (walletAddress) return;
+
+    const tryConnect = async () => {
+      // First check if Web3Auth already has a session (persisted by its SDK)
+      try {
+        const web3auth = await getWeb3Auth();
+        if (web3auth.connected && web3auth.provider) {
+          const addr = await getWalletAddress();
+          if (addr) {
+            setWalletAddress(addr);
+            await supabase.functions.invoke('provision-wallet', {
+              body: { wallet_address: addr },
+            });
+            return;
+          }
+        }
+      } catch { /* no existing session */ }
+
+      // If no existing session, try with JWT
+      if (web3authJwt) {
+        await silentConnectWallet(web3authJwt);
+      }
+    };
+
+    tryConnect();
   }, [profile, web3authJwt]);
 
   useEffect(() => {
