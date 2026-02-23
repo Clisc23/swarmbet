@@ -44,7 +44,9 @@ export async function getWeb3Auth(): Promise<Web3Auth> {
  */
 export async function connectWithJwt(idToken: string): Promise<{ provider: any; address: string } | null> {
   try {
+    console.log('[Web3Auth] connectWithJwt called');
     const web3auth = await getWeb3Auth();
+    console.log('[Web3Auth] init done, connected:', web3auth.connected);
 
     // If already connected, just return current wallet
     if (web3auth.connected && web3auth.provider) {
@@ -57,6 +59,7 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
     }
 
     // Silent login with custom JWT
+    console.log('[Web3Auth] Calling connectTo with custom JWT...');
     await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
       authConnection: AUTH_CONNECTION.CUSTOM,
       authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
@@ -67,6 +70,7 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
       },
     } as any);
 
+    console.log('[Web3Auth] connectTo completed, provider:', !!web3auth.provider);
     if (!web3auth.provider) return null;
 
     const walletClient = createWalletClient({
@@ -78,7 +82,7 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
 
     return { provider: web3auth.provider, address };
   } catch (err) {
-    console.error('Web3Auth silent JWT connection failed:', err);
+    console.error('[Web3Auth] connectWithJwt FAILED:', err);
     return null;
   }
 }
