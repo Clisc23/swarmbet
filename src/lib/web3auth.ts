@@ -6,8 +6,7 @@ import { mainnet } from 'viem/chains';
 
 const WEB3AUTH_CLIENT_ID = 'BKqVmzi9FtXmTw3SRZwnpj4k0d9FFfl_54OPYhOGkEkJYs6FGblWZdvOHRSy5Yc1vc25EkkNEGMTyH_qTguUfEI';
 
-// TODO: Replace with your actual authConnectionId from the Web3Auth dashboard
-const WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID = 'swarmbet-custom-jwt';
+const WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID = 'swarmbet-worldid-device';
 
 const chainConfig = {
   chainNamespace: CHAIN_NAMESPACES.EIP155,
