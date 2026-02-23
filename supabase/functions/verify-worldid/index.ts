@@ -13,25 +13,38 @@ const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
 
 function normalizePem(raw: string): string {
-  // Handle various escape formats: literal \n, \\n, or already real newlines
-  let pem = raw.replace(/\\n/g, '\n').replace(/\\r/g, '');
-  // If the PEM is all on one line (no real newlines between header/footer), reconstruct it
-  if (!pem.includes('\n')) {
-    const match = pem.match(/-----BEGIN (.+?)-----(.*?)-----END (.+?)-----/);
-    if (match) {
-      const body = match[2].replace(/\s/g, '');
-      const chunks = body.match(/.{1,64}/g) || [];
-      pem = `-----BEGIN ${match[1]}-----\n${chunks.join('\n')}\n-----END ${match[3]}-----`;
-    }
+  let pem = raw.replace(/\\n/g, '\n').replace(/\\r/g, '').trim();
+  
+  // If no PEM header, try base64 decode
+  if (!pem.includes('-----BEGIN')) {
+    try {
+      const decoded = atob(pem);
+      if (decoded.includes('-----BEGIN')) pem = decoded;
+    } catch { /* not base64 */ }
   }
-  // Ensure it ends with a newline
-  if (!pem.endsWith('\n')) pem += '\n';
+  
+  // Re-chunk body into proper 64-char lines
+  const headerMatch = pem.match(/-----BEGIN ([A-Z ]+)-----/);
+  const footerMatch = pem.match(/-----END ([A-Z ]+)-----/);
+  if (headerMatch && footerMatch) {
+    const header = `-----BEGIN ${headerMatch[1]}-----`;
+    const footer = `-----END ${footerMatch[1]}-----`;
+    const bodyStart = pem.indexOf(header) + header.length;
+    const bodyEnd = pem.indexOf(footer);
+    const body = pem.substring(bodyStart, bodyEnd).replace(/[\s\n\r]/g, '');
+    const chunks = body.match(/.{1,64}/g) || [];
+    pem = `${header}\n${chunks.join('\n')}\n${footer}\n`;
+  }
+  
   return pem;
 }
 
 async function signWeb3AuthJwt(nullifierHash: string): Promise<string> {
   const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!;
   const pem = normalizePem(rawPem);
+  console.log('PEM starts with:', pem.substring(0, 40));
+  console.log('PEM length:', pem.length);
+  console.log('PEM has PRIVATE KEY header:', pem.includes('PRIVATE KEY'));
   const privateKey = await importPKCS8(pem, 'RS256');
   return new SignJWT({ sub: nullifierHash })
     .setProtectedHeader({ alg: 'RS256', kid: 'swarmbet-1' })
