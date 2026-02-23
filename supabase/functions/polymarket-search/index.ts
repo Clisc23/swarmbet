@@ -15,13 +15,36 @@ serve(async (req) => {
   try {
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
 
-    const { password, query, tag_id, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume', ascending = false } = await req.json();
+    const body = await req.json();
+    const { password, action } = body;
 
     if (!adminPassword || password !== adminPassword) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    // Fetch available tags
+    if (action === 'tags') {
+      const tagsRes = await fetch(`${GAMMA_API}/tags`);
+      if (!tagsRes.ok) throw new Error(`Tags API error [${tagsRes.status}]`);
+      const tags = await tagsRes.json();
+      return new Response(JSON.stringify({ tags }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Fetch sports metadata
+    if (action === 'sports') {
+      const sportsRes = await fetch(`${GAMMA_API}/sports`);
+      if (!sportsRes.ok) throw new Error(`Sports API error [${sportsRes.status}]`);
+      const sports = await sportsRes.json();
+      return new Response(JSON.stringify({ sports }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { query, tag_id, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume', ascending = false } = body;
 
     // Build Polymarket search URL
     const params = new URLSearchParams();

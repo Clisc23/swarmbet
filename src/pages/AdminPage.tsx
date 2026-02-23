@@ -352,30 +352,45 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  // Category keywords used as title_contains filter
+  // Categories mapped to Polymarket tag_ids for accurate filtering
   const categories = [
-    { label: 'Soccer', keyword: 'soccer' },
-    { label: 'Football', keyword: 'football' },
-    { label: 'Basketball', keyword: 'basketball' },
-    { label: 'Tennis', keyword: 'tennis' },
-    { label: 'Politics', keyword: 'president' },
+    { label: 'Soccer', tag_id: '100350' },
+    { label: 'Basketball', tag_id: '28' },
+    { label: 'Tennis', tag_id: '864' },
+    { label: 'Cricket', tag_id: '517' },
+    { label: 'Baseball (MLB)', tag_id: '100381' },
+    { label: 'NFL', tag_id: '450' },
+    { label: 'NHL', tag_id: '899' },
+    { label: 'Esports', tag_id: '64' },
+    { label: 'NBA', tag_id: '745' },
+    { label: 'F1', tag_id: '101232', keyword: 'formula' },
+    { label: 'Politics', keyword: 'election' },
     { label: 'Crypto', keyword: 'bitcoin' },
-    { label: 'Science', keyword: 'science' },
-    { label: 'F1', keyword: 'formula' },
-    { label: 'MMA/UFC', keyword: 'UFC' },
-    { label: 'Baseball', keyword: 'baseball' },
   ];
 
   const search = useCallback(async (searchQuery?: string) => {
     setLoading(true);
     try {
-      // Combine user query with category keyword
       const userQuery = searchQuery ?? query;
-      const combinedQuery = category && !userQuery.toLowerCase().includes(category.toLowerCase())
-        ? (userQuery ? `${userQuery} ${category}` : category)
-        : userQuery;
-
-      const body: Record<string, any> = { password, query: combinedQuery || undefined, limit: 20, order: sortBy, ascending: false };
+      
+      // Find the selected category
+      const selectedCat = categories.find(c => c.label === category);
+      
+      const body: Record<string, any> = { password, limit: 20, order: sortBy, ascending: false };
+      
+      // Use tag_id if available, otherwise use keyword as title_contains
+      if (selectedCat) {
+        if ('tag_id' in selectedCat) body.tag_id = selectedCat.tag_id;
+        if ('keyword' in selectedCat) {
+          body.query = selectedCat.keyword;
+        }
+      }
+      
+      // User's search query always goes to title_contains (combined with category keyword if any)
+      if (userQuery) {
+        body.query = body.query ? `${body.query} ${userQuery}` : userQuery;
+      }
+      
       if (resolvesIn) {
         const now = new Date();
         body.end_date_min = now.toISOString();
@@ -419,7 +434,7 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
         <select value={category} onChange={(e) => setCategory(e.target.value)}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
           <option value="">All Categories</option>
-          {categories.map(c => <option key={c.keyword} value={c.keyword}>{c.label}</option>)}
+          {categories.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
         </select>
         <select value={resolvesIn} onChange={(e) => setResolvesIn(e.target.value)}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
