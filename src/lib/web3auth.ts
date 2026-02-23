@@ -6,7 +6,7 @@ import { sepolia } from 'viem/chains';
 
 const WEB3AUTH_CLIENT_ID = 'BKqVmzi9FtXmTw3SRZwnpj4k0d9FFfl_54OPYhOGkEkJYs6FGblWZdvOHRSy5Yc1vc25EkkNEGMTyH_qTguUfEI';
 
-const WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID = 'swarmbet-worldid-device';
+const WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID = 'swarmbet-auth-worldid-device';
 
 const chainConfig = {
   chainNamespace: CHAIN_NAMESPACES.EIP155,
