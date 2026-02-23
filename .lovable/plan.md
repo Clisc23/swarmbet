@@ -1,123 +1,146 @@
 
 
-## Rearchitect Wallet System: Server-Managed Wallets with Headless Vocdoni Voting
+## Updated Plan: Web3Auth Custom JWT with RS256 + JWKS Endpoint
 
-### Problem
-Currently, Web3Auth's modal SDK (`@web3auth/modal`) requires users to authenticate separately (email/socials), presents a visible modal, and requires client-side transaction signing. This creates friction and a confusing UX.
+### What changed from the previous plan
+The previous plan used HS256 (shared secret), but Web3Auth only supports asymmetric algorithms (RS256, ECDSA) verified via a JWKS endpoint. This updated plan uses **RS256** with a self-hosted JWKS endpoint.
 
-### Solution
-Replace the client-side Web3Auth modal approach with **server-managed wallets** where:
-- A private key is deterministically derived from the user's World ID `nullifier_hash` during signup
-- The private key is stored encrypted in the database (accessible only by edge functions via service role)
-- All Vocdoni interactions (election creation, vote casting) happen entirely in edge functions using the server-held private key
-- The user never sees a wallet modal or signs anything manually
-
-### Architecture
+### How it works
 
 ```text
-User Flow (Before):
-  World ID --> Supabase Auth --> Web3Auth Modal (email/social) --> Wallet --> Client-side Vocdoni SDK
-
-User Flow (After):
-  World ID --> Supabase Auth --> Server derives wallet from nullifier_hash
-                              --> Edge functions use private key for Vocdoni operations
-                              --> User sees nothing wallet-related
+1. User verifies with World ID
+2. verify-worldid edge function validates proof, creates/finds user
+3. verify-worldid signs a JWT (RS256) using a stored RSA private key
+4. Frontend receives the JWT alongside the Supabase session
+5. Frontend calls web3auth.connectTo() with the JWT -- no modal shown
+6. Web3Auth fetches the JWKS endpoint to verify the JWT signature
+7. Web3Auth silently provisions/recovers the user's embedded wallet
+8. Wallet is available for Vocdoni vote signing (existing client-side flow)
 ```
 
-### Changes
+### New edge function: `jwks`
 
-**1. Database: Add `wallet_private_key` column to `users` table**
-- Add an encrypted private key column (only accessible via service role, never exposed to client)
-- The existing `wallet_address` column continues to store the public address
+A simple endpoint that serves the RSA public key in JWKS format. Web3Auth calls this to verify JWTs.
 
-**2. Edge Function: `verify-worldid` (modify)**
-- During new user signup, generate a real Ethereum keypair deterministically from `nullifier_hash + server secret`
-- Store both `wallet_address` (public) and `wallet_private_key` (encrypted) in the users table
-- Remove the fake SHA-256 derived address
-
-**3. Edge Function: `cast-vocdoni-vote` (new)**
-- Accepts `poll_id`, `option_index` from the authenticated user
-- Retrieves the user's private key from the database
-- Uses the Vocdoni SDK with an ethers `Wallet` signer to:
-  - If election is `pending`: create the election on-chain, finalize it
-  - Cast the vote using `client.submitVote()`
-- Returns the `vocdoni_vote_id` receipt
-- This replaces all client-side Vocdoni logic
-
-**4. Edge Function: `create-vocdoni-election` (modify)**
-- Use a dedicated "organizer" wallet (server-side private key from env secret) to create elections
-- No longer depends on a user's wallet for election creation
-
-**5. Frontend: Remove Web3Auth entirely**
-- Delete `src/lib/web3auth.ts`
-- Delete `src/lib/vocdoni.ts` (all logic moves to edge functions)
-- Simplify `src/lib/voting.ts` to just call the `cast-vocdoni-vote` edge function
-- Remove Web3Auth from `AuthContext.tsx` (no more `connectWallet`, `walletAddress` state from Web3Auth)
-- The `walletAddress` in context can come from the user's profile (`profile.wallet_address`) instead
-- Remove `@web3auth/modal` and `@web3auth/ethereum-provider` dependencies
-- Update `ProfilePage.tsx` to remove the "Set Up Wallet" button (wallets are auto-provisioned)
-
-**6. Edge Function: `provision-wallet` (remove or repurpose)**
-- No longer needed since wallets are created at signup time
-- Can be removed entirely
-
-**7. Edge Function: `get-voter-wallets` (keep)**
-- Still needed for census building, no changes required
-
-**8. Edge Function: `finalize-election` (keep)**
-- Still needed for atomic election ID updates, no changes required
-
-### Technical Details
-
-**Wallet Derivation:**
+- URL: `https://lchhalwiijvgaffgfmjx.supabase.co/functions/v1/jwks`
+- Returns a JSON object like:
 ```text
-// In verify-worldid edge function
-const seed = await crypto.subtle.digest('SHA-256',
-  encoder.encode(nullifier_hash + WALLET_DERIVATION_SECRET));
-// Use seed as private key for ethers.Wallet
-const wallet = new ethers.Wallet(privateKeyHex);
-// Store wallet.address and privateKeyHex in users table
+{
+  "keys": [{
+    "kty": "RSA",
+    "kid": "swarmbet-1",
+    "use": "sig",
+    "alg": "RS256",
+    "n": "<base64url-encoded modulus>",
+    "e": "AQAB"
+  }]
+}
 ```
+- The public key components are derived from the `WEB3AUTH_RSA_PRIVATE_KEY` secret at runtime (or a separate `WEB3AUTH_RSA_PUBLIC_KEY` secret for simplicity)
+- No authentication required (public endpoint)
 
-The `WALLET_DERIVATION_SECRET` is an environment secret that ensures private keys can't be reconstructed without server access.
+### New secret: `WEB3AUTH_RSA_PRIVATE_KEY`
 
-**Vocdoni Vote Casting (edge function):**
+An RSA private key in PEM format used to sign JWTs in the verify-worldid function. You can generate one with:
+
 ```text
-// In cast-vocdoni-vote edge function
-import { Wallet } from 'ethers';
-import { VocdoniSDKClient, Vote } from '@vocdoni/sdk';
-
-const wallet = new Wallet(user.wallet_private_key);
-const client = new VocdoniSDKClient({ env: 'stg', wallet });
-await client.createAccount();
-client.setElectionId(electionId);
-const voteId = await client.submitVote(new Vote([optionIndex]));
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
 ```
 
-**New Secret Required:**
-- `WALLET_DERIVATION_SECRET` - a random string used to derive wallet private keys deterministically
+The private key PEM content is stored as a backend secret. The public key is either derived from it at runtime or stored as a second secret.
 
-**Migration for Existing Users:**
-- A one-time migration edge function can regenerate wallet keypairs for existing users using their `nullifier_hash` + the new secret
+### Web3Auth Dashboard Setup
 
-### Files to Create
-- `supabase/functions/cast-vocdoni-vote/index.ts` - New edge function for server-side voting
+After the JWKS endpoint is deployed:
 
-### Files to Modify
-- `supabase/functions/verify-worldid/index.ts` - Generate real keypair at signup
-- `supabase/functions/create-vocdoni-election/index.ts` - Use organizer wallet from env
-- `src/lib/voting.ts` - Simplify to call edge function only
-- `src/contexts/AuthContext.tsx` - Remove Web3Auth, use profile.wallet_address
-- `src/pages/ProfilePage.tsx` - Remove manual wallet provisioning UI
-- `src/components/VoteSheet.tsx` - Minor cleanup (no wallet connection needed)
+1. Go to Web3Auth dashboard > your project > Authentication
+2. Add a new **Custom JWT** connection
+3. Set the **JWKS Endpoint** to: `https://lchhalwiijvgaffgfmjx.supabase.co/functions/v1/jwks`
+4. Set **JWT User Identifier** field to: `sub`
+5. Note the generated **authConnectionId** -- this goes into the frontend code
 
-### Files to Delete
-- `src/lib/web3auth.ts` - No longer needed
-- `src/lib/vocdoni.ts` - Logic moves to edge functions
-- `supabase/functions/provision-wallet/index.ts` - No longer needed
+### Changes summary
 
-### Dependencies to Remove
-- `@web3auth/modal`
-- `@web3auth/ethereum-provider`
-- `viem` (only used for Web3Auth wallet client)
+**Files to create:**
+- `supabase/functions/jwks/index.ts` -- Serves RSA public key in JWKS format
+
+**Files to modify:**
+- `supabase/functions/verify-worldid/index.ts` -- Sign and return an RS256 JWT after successful verification
+- `src/lib/web3auth.ts` -- Replace `web3auth.connect()` with `web3auth.connectTo(WALLET_CONNECTORS.AUTH, { authConnection: AUTH_CONNECTION.CUSTOM, idToken: jwt })`
+- `src/contexts/AuthContext.tsx` -- Silently connect Web3Auth using JWT after login; remove manual `connectWallet` logic; derive `walletAddress` from Web3Auth session
+- `src/pages/AuthPage.tsx` -- Store the JWT from verify-worldid response and pass it to the Web3Auth connection flow
+- `src/pages/ProfilePage.tsx` -- Remove "Set Up Wallet" button (wallets are auto-provisioned on login)
+- `src/lib/voting.ts` -- Get the already-connected provider from AuthContext instead of calling `ensureWalletConnected()`
+- `supabase/config.toml` -- Add `[functions.jwks]` with `verify_jwt = false`
+
+**Files unchanged:**
+- `src/lib/vocdoni.ts` -- Vocdoni SDK usage stays client-side with the Web3Auth provider
+- `src/components/VoteSheet.tsx` -- No changes needed
+- `supabase/functions/provision-wallet/index.ts` -- Still needed to store the real Web3Auth wallet address
+- `supabase/functions/get-voter-wallets/index.ts` -- Still needed for census
+- `supabase/functions/finalize-election/index.ts` -- Still needed
+
+**No dependencies to add or remove** -- the existing `@web3auth/modal` package supports `connectTo()` with custom JWT.
+
+### Technical details
+
+**JWT structure (signed by verify-worldid):**
+```text
+Header: { "alg": "RS256", "typ": "JWT", "kid": "swarmbet-1" }
+Payload: {
+  "sub": "<nullifier_hash>",
+  "iat": <unix_timestamp>,
+  "exp": <unix_timestamp + 1 hour>,
+  "aud": "web3auth",
+  "iss": "swarmbet"
+}
+```
+
+**JWT signing in edge function (using jose library):**
+```text
+import { SignJWT, importPKCS8 } from "https://deno.land/x/jose@v5.2.0/index.ts";
+
+const privateKey = await importPKCS8(rsaPem, "RS256");
+const jwt = await new SignJWT({ sub: nullifier_hash })
+  .setProtectedHeader({ alg: "RS256", kid: "swarmbet-1" })
+  .setIssuedAt()
+  .setExpirationTime("1h")
+  .setAudience("web3auth")
+  .setIssuer("swarmbet")
+  .sign(privateKey);
+```
+
+**JWKS endpoint (extracting public key from private key):**
+```text
+import { importPKCS8, exportJWK } from "https://deno.land/x/jose@v5.2.0/index.ts";
+
+const privateKey = await importPKCS8(rsaPem, "RS256");
+const jwk = await exportJWK(privateKey);
+// Return only the public components (n, e) -- omit d, p, q, etc.
+const publicJwk = { kty: jwk.kty, n: jwk.n, e: jwk.e, kid: "swarmbet-1", use: "sig", alg: "RS256" };
+return { keys: [publicJwk] };
+```
+
+**Frontend silent connection:**
+```text
+import { WALLET_CONNECTORS, AUTH_CONNECTION } from '@web3auth/modal';
+
+await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
+  authConnection: AUTH_CONNECTION.CUSTOM,
+  authConnectionId: "<from-dashboard>",
+  idToken: jwt,
+});
+```
+
+### Implementation order
+
+1. Generate RSA keypair and add `WEB3AUTH_RSA_PRIVATE_KEY` as a secret
+2. Create and deploy the `jwks` edge function
+3. Configure the custom JWT connection in Web3Auth dashboard using the JWKS URL
+4. Update `verify-worldid` to sign and return a JWT
+5. Update `web3auth.ts` to use `connectTo` with the JWT
+6. Update `AuthContext.tsx` to silently connect after login
+7. Update `AuthPage.tsx` to pass the JWT through
+8. Simplify `voting.ts` and `ProfilePage.tsx`
 
