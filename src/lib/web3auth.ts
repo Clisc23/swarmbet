@@ -31,6 +31,19 @@ export async function getWeb3Auth(): Promise<Web3Auth> {
     clientId: WEB3AUTH_CLIENT_ID,
     web3AuthNetwork: WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
     privateKeyProvider: privateKeyProvider as any,
+    modalConfig: {
+      connectors: {
+        [WALLET_CONNECTORS.AUTH]: {
+          label: 'auth',
+          loginMethods: {
+            custom: {
+              name: 'WorldID Login',
+              authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
+            },
+          },
+        },
+      },
+    },
   });
 
   await web3auth.init();
