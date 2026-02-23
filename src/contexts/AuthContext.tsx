@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Session, User } from '@supabase/supabase-js';
 import type { Tables } from '@/integrations/supabase/types';
@@ -38,6 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const connectingRef = useRef(false);
   const [web3authJwt, setWeb3authJwtState] = useState<string | null>(() => {
     try { return sessionStorage.getItem('web3auth_jwt'); } catch { return null; }
   });
@@ -93,23 +94,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (walletAddress) return;
 
     const tryConnect = async () => {
-      // First check if Web3Auth already has a session (persisted by its SDK)
+      if (connectingRef.current) return;
+      connectingRef.current = true;
       try {
-        const web3auth = await getWeb3Auth();
-        if (web3auth.connected && web3auth.provider) {
-          const addr = await getWalletAddress();
-          if (addr) {
-            setWalletAddress(addr);
-            await supabase.functions.invoke('provision-wallet', {
-              body: { wallet_address: addr },
-            });
-            return;
+        // First check if Web3Auth already has a session (persisted by its SDK)
+        try {
+          const web3auth = await getWeb3Auth();
+          if (web3auth.connected && web3auth.provider) {
+            const addr = await getWalletAddress();
+            if (addr) {
+              setWalletAddress(addr);
+              await supabase.functions.invoke('provision-wallet', {
+                body: { wallet_address: addr },
+              });
+              return;
+            }
           }
-        }
-      } catch { /* no existing session */ }
+        } catch { /* no existing session */ }
 
-      // Mint a fresh JWT and connect (old JWT may be single-use / expired)
-      await mintFreshJwtAndConnect();
+        // Mint a fresh JWT and connect (old JWT may be single-use / expired)
+        await mintFreshJwtAndConnect();
+      } finally {
+        connectingRef.current = false;
+      }
     };
 
     tryConnect();

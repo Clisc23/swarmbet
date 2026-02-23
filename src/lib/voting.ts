@@ -80,10 +80,7 @@ export async function handleAnonymousVote(
   const address = await getWalletAddress();
   
   if (!provider || !address) {
-    // Web3Auth wallet not available — skip Vocdoni ZK proof,
-    // vote will be recorded as non-anonymous in the backend
-    console.warn('Web3Auth wallet not connected, falling back to non-anonymous vote');
-    return undefined;
+    throw new Error('Web3Auth wallet not connected — cannot cast anonymous vote');
   }
 
   await ensureWalletProvisioned(address);

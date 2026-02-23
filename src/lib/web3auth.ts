@@ -2,7 +2,7 @@ import { Web3Auth, WALLET_CONNECTORS, AUTH_CONNECTION } from '@web3auth/modal';
 import { CHAIN_NAMESPACES, WEB3AUTH_NETWORK } from '@web3auth/modal';
 import { EthereumPrivateKeyProvider } from '@web3auth/ethereum-provider';
 import { createWalletClient, custom } from 'viem';
-import { mainnet } from 'viem/chains';
+import { sepolia } from 'viem/chains';
 
 const WEB3AUTH_CLIENT_ID = 'BKqVmzi9FtXmTw3SRZwnpj4k0d9FFfl_54OPYhOGkEkJYs6FGblWZdvOHRSy5Yc1vc25EkkNEGMTyH_qTguUfEI';
 
@@ -10,10 +10,10 @@ const WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID = 'swarmbet-worldid-device';
 
 const chainConfig = {
   chainNamespace: CHAIN_NAMESPACES.EIP155,
-  chainId: '0x1',
-  rpcTarget: 'https://rpc.ankr.com/eth',
-  displayName: 'Ethereum Mainnet',
-  blockExplorerUrl: 'https://etherscan.io',
+  chainId: '0xaa36a7',
+  rpcTarget: 'https://rpc.ankr.com/eth_sepolia',
+  displayName: 'Ethereum Sepolia',
+  blockExplorerUrl: 'https://sepolia.etherscan.io',
   ticker: 'ETH',
   tickerName: 'Ethereum',
 };
@@ -62,7 +62,7 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
     // If already connected, just return current wallet
     if (web3auth.connected && web3auth.provider) {
       const walletClient = createWalletClient({
-        chain: mainnet,
+        chain: sepolia,
         transport: custom(web3auth.provider),
       });
       const [address] = await walletClient.getAddresses();
@@ -74,12 +74,16 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
       authConnection: AUTH_CONNECTION.CUSTOM,
       authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
       idToken,
+      extraLoginOptions: {
+        verifierIdField: 'sub',
+        isUserIdCaseSensitive: false,
+      },
     } as any);
 
     if (!web3auth.provider) return null;
 
     const walletClient = createWalletClient({
-      chain: mainnet,
+      chain: sepolia,
       transport: custom(web3auth.provider),
     });
     const [address] = await walletClient.getAddresses();
@@ -101,7 +105,7 @@ export async function getWalletAddress(): Promise<string | null> {
     if (!web3auth.connected || !web3auth.provider) return null;
 
     const walletClient = createWalletClient({
-      chain: mainnet,
+      chain: sepolia,
       transport: custom(web3auth.provider),
     });
 
