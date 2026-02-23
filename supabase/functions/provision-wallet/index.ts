@@ -12,8 +12,8 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader) {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Not authenticated' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -23,22 +23,26 @@ serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Verify the calling user
+    // Verify the calling user via getClaims
     const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
-      global: { headers: { authorization: authHeader } },
+      global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authError } = await anonClient.auth.getUser();
-    if (authError || !user) {
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
       return new Response(JSON.stringify({ error: 'Invalid session' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    const userId = claimsData.claims.sub;
+
     // Get user profile
     const { data: profile } = await supabase
       .from('users')
       .select('id, wallet_address, nullifier_hash, auth_uid')
-      .eq('auth_uid', user.id)
+      .eq('auth_uid', userId)
       .single();
 
     if (!profile) {

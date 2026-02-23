@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.create-vocdoni-election]
 verify_jwt = false
+
+[functions.provision-wallet]
+verify_jwt = false
