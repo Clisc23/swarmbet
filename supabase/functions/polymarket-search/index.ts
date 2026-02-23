@@ -13,11 +13,9 @@ serve(async (req) => {
   }
 
   try {
-    // Verify admin password
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
-    // Password extracted below with other params
 
-    const { password, query, tag, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume24hr', ascending = false } = await req.json();
+    const { password, query, tag_id, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume_24hr', ascending = false } = await req.json();
 
     if (!adminPassword || password !== adminPassword) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -35,11 +33,12 @@ serve(async (req) => {
     params.set('ascending', String(ascending));
 
     if (query) params.set('title_contains', query);
-    if (tag) params.set('tag', tag);
+    if (tag_id) params.set('tag_id', String(tag_id));
     if (end_date_max) params.set('end_date_max', end_date_max);
     if (end_date_min) params.set('end_date_min', end_date_min);
 
     const url = `${GAMMA_API}/events?${params.toString()}`;
+    console.log('Fetching Polymarket:', url);
 
     const res = await fetch(url);
     if (!res.ok) {
@@ -49,7 +48,6 @@ serve(async (req) => {
 
     const events = await res.json();
 
-    // Transform to a simpler format
     const transformed = (Array.isArray(events) ? events : []).map((event: any) => ({
       id: event.id,
       title: event.title,
@@ -61,6 +59,7 @@ serve(async (req) => {
       volume: event.volume,
       volume24hr: event.volume24hr,
       liquidity: event.liquidity,
+      tags: (event.tags || []).map((t: any) => t.label || t.slug || ''),
       markets: (event.markets || []).map((m: any) => ({
         id: m.id,
         question: m.question,
@@ -70,6 +69,7 @@ serve(async (req) => {
         volume: m.volume,
         active: m.active,
         closed: m.closed,
+        endDate: m.endDate,
       })),
     }));
 
@@ -77,6 +77,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
+    console.error('Error:', err.message);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

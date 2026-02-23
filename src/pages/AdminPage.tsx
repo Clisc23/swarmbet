@@ -20,7 +20,7 @@ interface PolymarketMarket {
 }
 interface PolymarketEvent {
   id: string; title: string; slug: string; description: string; image: string;
-  volume: number; volume24hr: number; liquidity: number; markets: PolymarketMarket[];
+  volume: number; volume24hr: number; liquidity: number; tags?: string[]; markets: PolymarketMarket[];
 }
 interface PollFormData {
   question: string; description: string; category: string; day_number: number;
@@ -345,20 +345,37 @@ function CreatePoll({ password, prefill, onCreated }: { password: string; prefil
 // -- Polymarket Browser --
 function PolymarketBrowser({ password, onImport }: { password: string; onImport: (data: Partial<PollFormData>) => void }) {
   const [query, setQuery] = useState('');
-  const [tag, setTag] = useState('');
+  const [category, setCategory] = useState('');
   const [resolvesIn, setResolvesIn] = useState('');
-  const [sortBy, setSortBy] = useState('volume24hr');
+  const [sortBy, setSortBy] = useState('volume_24hr');
   const [events, setEvents] = useState<PolymarketEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const polyTags = ['soccer', 'tennis', 'politics', 'crypto', 'sports', 'basketball', 'football', 'pop-culture', 'science', 'business'];
+  // Category keywords used as title_contains filter
+  const categories = [
+    { label: 'Soccer', keyword: 'soccer' },
+    { label: 'Football', keyword: 'football' },
+    { label: 'Basketball', keyword: 'basketball' },
+    { label: 'Tennis', keyword: 'tennis' },
+    { label: 'Politics', keyword: 'president' },
+    { label: 'Crypto', keyword: 'bitcoin' },
+    { label: 'Science', keyword: 'science' },
+    { label: 'F1', keyword: 'formula' },
+    { label: 'MMA/UFC', keyword: 'UFC' },
+    { label: 'Baseball', keyword: 'baseball' },
+  ];
 
   const search = useCallback(async (searchQuery?: string) => {
     setLoading(true);
     try {
-      const body: Record<string, any> = { password, query: searchQuery ?? query, limit: 20, order: sortBy, ascending: false };
-      if (tag) body.tag = tag;
+      // Combine user query with category keyword
+      const userQuery = searchQuery ?? query;
+      const combinedQuery = category && !userQuery.toLowerCase().includes(category.toLowerCase())
+        ? (userQuery ? `${userQuery} ${category}` : category)
+        : userQuery;
+
+      const body: Record<string, any> = { password, query: combinedQuery || undefined, limit: 20, order: sortBy, ascending: false };
       if (resolvesIn) {
         const now = new Date();
         body.end_date_min = now.toISOString();
@@ -373,7 +390,12 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
       if ((data.events || []).length === 0) toast.info('No events found');
     } catch (err: any) { toast.error(err.message); }
     finally { setLoading(false); }
-  }, [password, query, tag, resolvesIn, sortBy]);
+  }, [password, query, category, resolvesIn, sortBy]);
+
+  // Auto-search when filters change
+  useEffect(() => {
+    search();
+  }, [category, resolvesIn, sortBy]);
 
   const formatVolume = (v: number) => {
     if (!v) return '$0';
@@ -394,10 +416,10 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <select value={tag} onChange={(e) => setTag(e.target.value)}
+        <select value={category} onChange={(e) => setCategory(e.target.value)}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
           <option value="">All Categories</option>
-          {polyTags.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+          {categories.map(c => <option key={c.keyword} value={c.keyword}>{c.label}</option>)}
         </select>
         <select value={resolvesIn} onChange={(e) => setResolvesIn(e.target.value)}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
@@ -411,11 +433,11 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
         </select>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
-          <option value="volume24hr">Sort: 24h Volume</option>
+          <option value="volume_24hr">Sort: 24h Volume</option>
           <option value="volume">Sort: Total Volume</option>
           <option value="liquidity">Sort: Liquidity</option>
-          <option value="startDate">Sort: Start Date</option>
-          <option value="endDate">Sort: End Date</option>
+          <option value="start_date">Sort: Start Date</option>
+          <option value="end_date">Sort: End Date</option>
         </select>
       </div>
 
