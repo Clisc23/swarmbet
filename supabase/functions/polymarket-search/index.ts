@@ -15,7 +15,7 @@ serve(async (req) => {
   try {
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
 
-    const { password, query, tag_id, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume_24hr', ascending = false } = await req.json();
+    const { password, query, tag_id, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume', ascending = false } = await req.json();
 
     if (!adminPassword || password !== adminPassword) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
