@@ -6,7 +6,7 @@ export function usePolls(status?: string) {
   return useQuery({
     queryKey: ['polls', status],
     queryFn: async () => {
-      let query = supabase.from('polls').select('*, poll_options(*)').order('day_number', { ascending: true });
+      let query = supabase.from('polls').select('*, poll_options!poll_options_poll_id_fkey(*)').order('day_number', { ascending: true });
       if (status) query = query.eq('status', status);
       const { data, error } = await query;
       if (error) throw error;
@@ -22,7 +22,7 @@ export function usePoll(pollId: string | undefined) {
       if (!pollId) return null;
       const { data, error } = await supabase
         .from('polls')
-        .select('*, poll_options(*)')
+        .select('*, poll_options!poll_options_poll_id_fkey(*)')
         .eq('id', pollId)
         .single();
       if (error) throw error;
