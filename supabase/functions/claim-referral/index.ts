@@ -29,6 +29,11 @@ serve(async (req) => {
 
     const { referral_code } = await req.json();
 
+    // Input validation
+    if (!referral_code || typeof referral_code !== 'string' || referral_code.length < 4 || referral_code.length > 20 || !/^[A-Za-z0-9]+$/.test(referral_code)) {
+      return new Response(JSON.stringify({ error: 'Invalid referral code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     // Get current user
     const { data: currentUser } = await supabase
       .from('users')
@@ -62,13 +67,16 @@ serve(async (req) => {
       points_awarded: 100,
     });
 
-    // Award points to both
-    await supabase.from('users').update({ swarm_points: referrer.swarm_points + 100, referral_count: (referrer.referral_count || 0) + 1 }).eq('id', referrer.id);
-    await supabase.from('users').update({ swarm_points: currentUser.swarm_points + 100, referred_by: referrer.id }).eq('id', currentUser.id);
+    // Atomic award points to both users
+    await supabase.rpc('award_referral_points', {
+      p_referrer_id: referrer.id,
+      p_referred_id: currentUser.id,
+      p_points: 100,
+    });
 
     await supabase.from('points_history').insert([
-      { user_id: referrer.id, amount: 100, type: 'referral_given', description: `Referred ${currentUser.username}` },
-      { user_id: currentUser.id, amount: 100, type: 'referral_received', description: `Referred by ${referrer.username}` },
+      { user_id: referrer.id, amount: 100, type: 'referral_given', description: `Referred a new user` },
+      { user_id: currentUser.id, amount: 100, type: 'referral_received', description: `Referred by another user` },
     ]);
 
     return new Response(JSON.stringify({ success: true, referrer_username: referrer.username }), {
@@ -76,6 +84,7 @@ serve(async (req) => {
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    console.error('claim-referral error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to process referral' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

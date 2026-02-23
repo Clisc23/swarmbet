@@ -15,7 +15,7 @@ serve(async (req) => {
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
 
     if (!adminPassword) {
-      return new Response(JSON.stringify({ error: 'Admin password not configured' }), {
+      return new Response(JSON.stringify({ error: 'Admin access not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -30,7 +30,8 @@ serve(async (req) => {
       status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('admin-verify error:', err);
+    return new Response(JSON.stringify({ error: 'Authentication failed' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

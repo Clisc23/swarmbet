@@ -8,6 +8,7 @@ const corsHeaders = {
 
 const APP_ID = "app_staging_9d76b538d092dff2d0252b5122a64585";
 const ACTION = "swarmbet-login";
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -23,20 +24,28 @@ serve(async (req) => {
       });
     }
 
-    // Initialize Supabase client first to check for existing users
+    // Input validation
+    if (typeof nullifier_hash !== 'string' || nullifier_hash.length < 10 || nullifier_hash.length > 200) {
+      return new Response(JSON.stringify({ error: 'Invalid request' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    if (typeof proof !== 'string' || proof.length > 5000) {
+      return new Response(JSON.stringify({ error: 'Invalid request' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Check if this nullifier_hash already has an account BEFORE calling World ID API
     const { data: existingUser } = await supabase
       .from('users')
       .select('auth_uid')
       .eq('nullifier_hash', nullifier_hash)
       .maybeSingle();
 
-    // Only verify with World ID API for truly NEW users on their FIRST call (no username yet)
-    // When username is provided, the proof was already verified in the first call
     if (!existingUser && !username) {
       const verifyRes = await fetch(`https://developer.worldcoin.org/api/v2/verify/${APP_ID}`, {
         method: 'POST',
@@ -51,9 +60,8 @@ serve(async (req) => {
       });
 
       if (!verifyRes.ok) {
-        const errBody = await verifyRes.json().catch(() => ({}));
-        console.error('World ID verification failed:', errBody);
-        return new Response(JSON.stringify({ error: 'World ID verification failed', detail: errBody }), {
+        console.error('World ID verification failed');
+        return new Response(JSON.stringify({ error: 'Verification failed' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -62,7 +70,6 @@ serve(async (req) => {
     const email = `worldid_${nullifier_hash.slice(0, 16)}@swarmbets.local`;
 
     if (existingUser) {
-      // Returning user — generate magic link token
       const { data: sessionData, error: sessionError } = await supabase.auth.admin.generateLink({
         type: 'magiclink',
         email,
@@ -83,8 +90,8 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // New user — need username
-    if (!username || username.trim().length < 3) {
+    // New user — need username with validation
+    if (!username || typeof username !== 'string' || !USERNAME_RE.test(username.trim())) {
       return new Response(JSON.stringify({
         success: true,
         is_new_user: true,
@@ -93,7 +100,8 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Create auth user
+    const cleanUsername = username.trim().toLowerCase();
+
     const password = crypto.randomUUID();
     const { data: signUpData, error: signUpError } = await supabase.auth.admin.createUser({
       email,
@@ -109,9 +117,8 @@ serve(async (req) => {
     }
 
     const authUid = signUpData.user.id;
-    const referralCode = username.trim().slice(0, 4).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const referralCode = cleanUsername.slice(0, 4).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 
-    // Generate an Ethereum-style wallet address deterministically from nullifier_hash
     const encoder = new TextEncoder();
     const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(nullifier_hash + authUid));
     const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -119,7 +126,7 @@ serve(async (req) => {
 
     const { error: profileError } = await supabase.from('users').insert({
       auth_uid: authUid,
-      username: username.trim().toLowerCase(),
+      username: cleanUsername,
       display_name: username.trim(),
       nullifier_hash,
       referral_code: referralCode,
@@ -128,13 +135,12 @@ serve(async (req) => {
 
     if (profileError) {
       await supabase.auth.admin.deleteUser(authUid);
-      const msg = profileError.message.includes('unique') ? 'Username already taken' : profileError.message;
-      return new Response(JSON.stringify({ error: msg }), {
+      const isUsernameTaken = profileError.message?.includes('unique');
+      return new Response(JSON.stringify({ error: isUsernameTaken ? 'Username already taken' : 'Failed to create profile' }), {
         status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Award signup bonus
     const { data: userData } = await supabase.from('users').select('id').eq('auth_uid', authUid).single();
     if (userData) {
       await supabase.from('points_history').insert({
@@ -145,7 +151,6 @@ serve(async (req) => {
       });
     }
 
-    // Generate session for the new user
     const { data: sessionData, error: sessionError } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email,
@@ -165,8 +170,8 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
-    console.error('Error:', err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('verify-worldid error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to process verification' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }

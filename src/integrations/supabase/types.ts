@@ -403,6 +403,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      award_referral_points: {
+        Args: { p_points: number; p_referred_id: string; p_referrer_id: string }
+        Returns: undefined
+      }
+      award_user_points: {
+        Args: {
+          p_increment_correct?: boolean
+          p_points: number
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       get_leaderboard: {
         Args: { page_limit?: number; page_offset?: number }
         Returns: {
@@ -419,6 +431,24 @@ export type Database = {
       }
       get_total_users: { Args: never; Returns: number }
       get_user_rank: { Args: { target_user_id: string }; Returns: number }
+      increment_option_vote_count: {
+        Args: { p_option_id: string }
+        Returns: undefined
+      }
+      increment_poll_total_votes: {
+        Args: { p_poll_id: string }
+        Returns: undefined
+      }
+      update_user_after_vote: {
+        Args: {
+          p_last_voted_date: string
+          p_new_max_streak: number
+          p_new_streak: number
+          p_points: number
+          p_user_id: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

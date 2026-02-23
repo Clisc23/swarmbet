@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 const VOCDONI_API = 'https://api-stg.vocdoni.net/v2';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -14,15 +15,30 @@ serve(async (req) => {
   }
 
   try {
+    // Admin password check
+    const adminPassword = Deno.env.get('ADMIN_PASSWORD');
+    let body: any = {};
+    try { body = await req.json(); } catch { /* empty body is fine */ }
+
+    if (!adminPassword || body?.password !== adminPassword) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const now = new Date().toISOString();
-
-    let body: any = {};
-    try { body = await req.json(); } catch { /* empty body is fine */ }
     const forcePollId = body?.force_poll_id;
+
+    // Input validation for optional force_poll_id
+    if (forcePollId && !UUID_RE.test(forcePollId)) {
+      return new Response(JSON.stringify({ error: 'Invalid poll ID' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     let query = supabase.from('polls').select('*, poll_options!poll_options_poll_id_fkey(*)').eq('status', 'active');
     if (forcePollId) {
@@ -51,24 +67,17 @@ serve(async (req) => {
       let maxVotes = 0;
 
       if (isAnonymous) {
-        // Fetch results from Vocdoni blockchain
         try {
           const electionRes = await fetch(`${VOCDONI_API}/elections/${poll.vocdoni_election_id}`);
-          if (!electionRes.ok) {
-            const errText = await electionRes.text();
-            console.error(`Failed to fetch Vocdoni election: ${errText}`);
-            // Fall through to close without results
-          } else {
+          if (electionRes.ok) {
             const electionData = await electionRes.json();
-            const vocdoniResults = electionData.result; // Array of arrays: result[questionIdx][optionIdx]
+            const vocdoniResults = electionData.result;
 
             if (vocdoniResults && vocdoniResults.length > 0) {
-              const questionResults = vocdoniResults[0]; // First (only) question
+              const questionResults = vocdoniResults[0];
               
-              // Map Vocdoni option indices back to poll_options
               for (let i = 0; i < sortedOptions.length && i < questionResults.length; i++) {
                 const voteCount = parseInt(questionResults[i] || '0', 10);
-                // Update the option's vote_count from Vocdoni results
                 await supabase.from('poll_options').update({ vote_count: voteCount }).eq('id', sortedOptions[i].id);
                 sortedOptions[i].vote_count = voteCount;
                 
@@ -78,17 +87,17 @@ serve(async (req) => {
                 }
               }
 
-              // Update total votes from Vocdoni
               const totalVotes = electionData.voteCount || sortedOptions.reduce((sum: number, o: any) => sum + (o.vote_count || 0), 0);
               await supabase.from('polls').update({ total_votes: totalVotes }).eq('id', poll.id);
               poll.total_votes = totalVotes;
             }
+          } else {
+            console.error(`Failed to fetch Vocdoni election for poll ${poll.id}`);
           }
         } catch (err) {
-          console.error('Vocdoni fetch error:', err);
+          console.error(`Vocdoni fetch error for poll ${poll.id}:`, err);
         }
 
-        // Now resolve individual votes using vocdoni_vote_id receipts
         const { data: votes } = await supabase
           .from('votes')
           .select('*')
@@ -101,10 +110,9 @@ serve(async (req) => {
                 const voteInfoRes = await fetch(`${VOCDONI_API}/votes/verify/${poll.vocdoni_election_id}/${vote.vocdoni_vote_id}`);
                 if (voteInfoRes.ok) {
                   const voteInfo = await voteInfoRes.json();
-                  // voteInfo.package contains the encrypted/decrypted vote content
                   const votePackage = voteInfo.package;
                   if (votePackage && Array.isArray(votePackage)) {
-                    const chosenIndex = votePackage[0]; // First question's choice
+                    const chosenIndex = votePackage[0];
                     if (chosenIndex >= 0 && chosenIndex < sortedOptions.length) {
                       const chosenOption = sortedOptions[chosenIndex];
                       await supabase.from('votes').update({
@@ -115,13 +123,12 @@ serve(async (req) => {
                   }
                 }
               } catch (err) {
-                console.error(`Failed to verify vote ${vote.vocdoni_vote_id}:`, err);
+                console.error(`Failed to verify vote for poll ${poll.id}`);
               }
             }
           }
         }
       } else {
-        // Non-anonymous: determine consensus from existing vote_counts
         for (const opt of options) {
           if ((opt.vote_count || 0) > maxVotes) {
             maxVotes = opt.vote_count || 0;
@@ -139,7 +146,6 @@ serve(async (req) => {
         continue;
       }
 
-      // Update poll with consensus + winner
       await supabase.from('polls').update({
         status: 'resolved',
         crowd_consensus_option_id: consensusOption.id,
@@ -147,10 +153,8 @@ serve(async (req) => {
         resolved_at: now,
       }).eq('id', poll.id);
 
-      // Mark winning option
       await supabase.from('poll_options').update({ is_winner: true }).eq('id', consensusOption.id);
 
-      // Update vote percentages for all options
       const totalVotes = poll.total_votes || 0;
       for (const opt of (isAnonymous ? sortedOptions : options)) {
         const pct = totalVotes > 0 ? ((opt.vote_count || 0) / totalVotes) * 100 : 0;
@@ -159,7 +163,6 @@ serve(async (req) => {
         }).eq('id', opt.id);
       }
 
-      // Get all votes for this poll and score them
       const { data: votes } = await supabase
         .from('votes')
         .select('*')
@@ -171,7 +174,6 @@ serve(async (req) => {
       }
 
       const consensusPoints = poll.points_for_consensus || 5000;
-      const userPointUpdates: Record<string, number> = {};
 
       for (const vote of votes) {
         const isCorrect = vote.option_id === consensusOption.id;
@@ -183,36 +185,20 @@ serve(async (req) => {
         }).eq('id', vote.id);
 
         if (isCorrect) {
-          userPointUpdates[vote.user_id] = (userPointUpdates[vote.user_id] || 0) + consensusPoints;
+          // Atomic points award
+          await supabase.rpc('award_user_points', {
+            p_user_id: vote.user_id,
+            p_points: consensusPoints,
+            p_increment_correct: true,
+          });
 
           await supabase.from('points_history').insert({
             user_id: vote.user_id,
             amount: consensusPoints,
             type: 'consensus_bonus',
-            description: `Matched crowd consensus on: ${poll.question}`,
+            description: `Matched crowd consensus`,
             poll_id: poll.id,
           });
-        }
-      }
-
-      // Update user stats (points + accuracy)
-      for (const [userId, bonusPoints] of Object.entries(userPointUpdates)) {
-        const { data: user } = await supabase
-          .from('users')
-          .select('swarm_points, correct_predictions, total_predictions')
-          .eq('id', userId)
-          .single();
-
-        if (user) {
-          const newCorrect = (user.correct_predictions || 0) + 1;
-          const newTotal = user.total_predictions || 1;
-          const newAccuracy = newCorrect / newTotal;
-
-          await supabase.from('users').update({
-            swarm_points: user.swarm_points + bonusPoints,
-            correct_predictions: newCorrect,
-            accuracy_score: Math.round(newAccuracy * 10000) / 10000,
-          }).eq('id', userId);
         }
       }
 
@@ -222,7 +208,6 @@ serve(async (req) => {
         anonymous: isAnonymous,
         consensus_option: consensusOption.label,
         total_votes: totalVotes,
-        correct_voters: Object.keys(userPointUpdates).length,
       });
     }
 
@@ -231,7 +216,8 @@ serve(async (req) => {
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('close-polls error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to process poll closure' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
