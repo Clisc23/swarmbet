@@ -15,7 +15,9 @@ serve(async (req) => {
   try {
     // Verify admin password
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
-    const { password, query, tag, limit = 20, offset = 0 } = await req.json();
+    // Password extracted below with other params
+
+    const { password, query, tag, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume24hr', ascending = false } = await req.json();
 
     if (!adminPassword || password !== adminPassword) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -24,14 +26,20 @@ serve(async (req) => {
     }
 
     // Build Polymarket search URL
-    let url: string;
-    if (query) {
-      url = `${GAMMA_API}/events?title_contains=${encodeURIComponent(query)}&active=true&closed=false&limit=${limit}&offset=${offset}`;
-    } else if (tag) {
-      url = `${GAMMA_API}/events?tag=${encodeURIComponent(tag)}&active=true&closed=false&limit=${limit}&offset=${offset}`;
-    } else {
-      url = `${GAMMA_API}/events?active=true&closed=false&limit=${limit}&offset=${offset}&order=volume24hr&ascending=false`;
-    }
+    const params = new URLSearchParams();
+    params.set('active', 'true');
+    params.set('closed', 'false');
+    params.set('limit', String(limit));
+    params.set('offset', String(offset));
+    params.set('order', order);
+    params.set('ascending', String(ascending));
+
+    if (query) params.set('title_contains', query);
+    if (tag) params.set('tag', tag);
+    if (end_date_max) params.set('end_date_max', end_date_max);
+    if (end_date_min) params.set('end_date_min', end_date_min);
+
+    const url = `${GAMMA_API}/events?${params.toString()}`;
 
     const res = await fetch(url);
     if (!res.ok) {

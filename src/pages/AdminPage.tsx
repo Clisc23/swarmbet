@@ -345,23 +345,35 @@ function CreatePoll({ password, prefill, onCreated }: { password: string; prefil
 // -- Polymarket Browser --
 function PolymarketBrowser({ password, onImport }: { password: string; onImport: (data: Partial<PollFormData>) => void }) {
   const [query, setQuery] = useState('');
+  const [tag, setTag] = useState('');
+  const [resolvesIn, setResolvesIn] = useState('');
+  const [sortBy, setSortBy] = useState('volume24hr');
   const [events, setEvents] = useState<PolymarketEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const polyTags = ['soccer', 'tennis', 'politics', 'crypto', 'sports', 'basketball', 'football', 'pop-culture', 'science', 'business'];
+
   const search = useCallback(async (searchQuery?: string) => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('polymarket-search', {
-        body: { password, query: searchQuery || query, limit: 20 },
-      });
+      const body: Record<string, any> = { password, query: searchQuery ?? query, limit: 20, order: sortBy, ascending: false };
+      if (tag) body.tag = tag;
+      if (resolvesIn) {
+        const now = new Date();
+        body.end_date_min = now.toISOString();
+        const max = new Date(now);
+        max.setDate(max.getDate() + Number(resolvesIn));
+        body.end_date_max = max.toISOString();
+      }
+      const { data, error } = await supabase.functions.invoke('polymarket-search', { body });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setEvents(data.events || []);
       if ((data.events || []).length === 0) toast.info('No events found');
     } catch (err: any) { toast.error(err.message); }
     finally { setLoading(false); }
-  }, [password, query]);
+  }, [password, query, tag, resolvesIn, sortBy]);
 
   const formatVolume = (v: number) => {
     if (!v) return '$0';
@@ -374,11 +386,37 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
     <div className="space-y-4">
       <div className="flex gap-2">
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search Polymarket events…"
-          onKeyDown={(e) => e.key === 'Enter' && search()} />
+          onKeyDown={(e) => e.key === 'Enter' && search()} className="flex-1" />
         <Button onClick={() => search()} disabled={loading}><Search className="h-4 w-4" /></Button>
         <Button variant="outline" onClick={() => { setQuery(''); search(''); }} disabled={loading}>
           <TrendingUp className="h-4 w-4" />
         </Button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <select value={tag} onChange={(e) => setTag(e.target.value)}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
+          <option value="">All Categories</option>
+          {polyTags.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+        </select>
+        <select value={resolvesIn} onChange={(e) => setResolvesIn(e.target.value)}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
+          <option value="">Any End Date</option>
+          <option value="1">Resolves in 1 day</option>
+          <option value="2">Resolves in 2 days</option>
+          <option value="3">Resolves in 3 days</option>
+          <option value="7">Resolves in 7 days</option>
+          <option value="14">Resolves in 14 days</option>
+          <option value="30">Resolves in 30 days</option>
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
+          <option value="volume24hr">Sort: 24h Volume</option>
+          <option value="volume">Sort: Total Volume</option>
+          <option value="liquidity">Sort: Liquidity</option>
+          <option value="startDate">Sort: Start Date</option>
+          <option value="endDate">Sort: End Date</option>
+        </select>
       </div>
 
       {loading && <p className="text-center text-muted-foreground py-8">Searching…</p>}
