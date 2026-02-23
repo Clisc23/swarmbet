@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import type { Tables } from '@/integrations/supabase/types';
 
 export function usePolls(status?: string) {
   return useQuery({
@@ -9,7 +10,7 @@ export function usePolls(status?: string) {
       if (status) query = query.eq('status', status);
       const { data, error } = await query;
       if (error) throw error;
-      return data;
+      return data as unknown as (Tables<'polls'> & { poll_options: Tables<'poll_options'>[] })[];
     },
   });
 }
