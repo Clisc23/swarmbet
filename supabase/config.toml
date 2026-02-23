@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.jwks]
 verify_jwt = false
+
+[functions.mint-web3auth-jwt]
+verify_jwt = false

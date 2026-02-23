@@ -50,12 +50,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch { /* ignore */ }
   };
 
-  const silentConnectWallet = async (jwt: string) => {
+  const mintFreshJwtAndConnect = async () => {
     try {
-      const wallet = await connectWithJwt(jwt);
+      // Mint a fresh single-use JWT from the backend
+      const { data, error } = await supabase.functions.invoke('mint-web3auth-jwt', {});
+      if (error || !data?.jwt) {
+        console.warn('Failed to mint fresh Web3Auth JWT:', error || data);
+        return;
+      }
+      const wallet = await connectWithJwt(data.jwt);
       if (wallet) {
         setWalletAddress(wallet.address);
-        // Provision wallet in backend
         await supabase.functions.invoke('provision-wallet', {
           body: { wallet_address: wallet.address },
         });
@@ -103,14 +108,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch { /* no existing session */ }
 
-      // If no existing session, try with JWT
-      if (web3authJwt) {
-        await silentConnectWallet(web3authJwt);
-      }
+      // Mint a fresh JWT and connect (old JWT may be single-use / expired)
+      await mintFreshJwtAndConnect();
     };
 
     tryConnect();
-  }, [profile, web3authJwt]);
+  }, [profile]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
