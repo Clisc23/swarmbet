@@ -1,75 +1,66 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { importPKCS8, exportJWK, importJWK } from "https://deno.land/x/jose@v5.2.0/index.ts";
-
-// Decode base64 to Uint8Array
-function base64ToUint8Array(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-// Convert PKCS#1 DER to PKCS#8 DER by wrapping with the AlgorithmIdentifier
-function pkcs1ToPkcs8(pkcs1Der: Uint8Array): Uint8Array {
-  // RSA OID: 1.2.840.113549.1.1.1
-  const oid = new Uint8Array([0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]);
-  const nullParam = new Uint8Array([0x05, 0x00]);
-  
-  // AlgorithmIdentifier SEQUENCE
-  const algoIdContent = new Uint8Array([...oid, ...nullParam]);
-  const algoId = wrapSequence(algoIdContent);
-  
-  // Wrap PKCS#1 key in OCTET STRING
-  const octetString = wrapTag(0x04, pkcs1Der);
-  
-  // Version INTEGER 0
-  const version = new Uint8Array([0x02, 0x01, 0x00]);
-  
-  // PKCS#8 SEQUENCE
-  return wrapSequence(new Uint8Array([...version, ...algoId, ...octetString]));
-}
-
-function wrapSequence(content: Uint8Array): Uint8Array {
-  return wrapTag(0x30, content);
-}
-
-function wrapTag(tag: number, content: Uint8Array): Uint8Array {
-  const len = encodeDerLength(content.length);
-  const result = new Uint8Array(1 + len.length + content.length);
-  result[0] = tag;
-  result.set(len, 1);
-  result.set(content, 1 + len.length);
-  return result;
-}
-
-function encodeDerLength(length: number): Uint8Array {
-  if (length < 0x80) return new Uint8Array([length]);
-  const bytes: number[] = [];
-  let tmp = length;
-  while (tmp > 0) { bytes.unshift(tmp & 0xff); tmp >>= 8; }
-  return new Uint8Array([0x80 | bytes.length, ...bytes]);
-}
-
-function pemToPkcs8Pem(pem: string): string {
-  // If already PKCS#8, return as-is
-  if (pem.includes('BEGIN PRIVATE KEY')) return pem;
-  
-  // Extract base64 from PKCS#1 PEM
-  const b64 = pem.replace(/-----BEGIN RSA PRIVATE KEY-----|-----END RSA PRIVATE KEY-----|\s/g, '');
-  const pkcs1Der = base64ToUint8Array(b64);
-  const pkcs8Der = pkcs1ToPkcs8(pkcs1Der);
-  
-  // Encode back to PEM
-  const pkcs8B64 = btoa(String.fromCharCode(...pkcs8Der));
-  const lines = pkcs8B64.match(/.{1,64}/g) || [];
-  return `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
   'Cache-Control': 'public, max-age=3600',
 };
+
+function base64ToUint8Array(b64: string): Uint8Array {
+  const raw = atob(b64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+function encodeDerLength(l: number): Uint8Array {
+  if (l < 0x80) return new Uint8Array([l]);
+  const b: number[] = []; let t = l;
+  while (t > 0) { b.unshift(t & 0xff); t >>= 8; }
+  return new Uint8Array([0x80 | b.length, ...b]);
+}
+
+function wrapTag(tag: number, c: Uint8Array): Uint8Array {
+  const len = encodeDerLength(c.length);
+  const r = new Uint8Array(1 + len.length + c.length);
+  r[0] = tag; r.set(len, 1); r.set(c, 1 + len.length); return r;
+}
+
+function wrapSequence(c: Uint8Array): Uint8Array { return wrapTag(0x30, c); }
+
+function pkcs1ToPkcs8(pkcs1Der: Uint8Array): Uint8Array {
+  const oid = new Uint8Array([0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]);
+  const nullParam = new Uint8Array([0x05, 0x00]);
+  const algoId = wrapSequence(new Uint8Array([...oid, ...nullParam]));
+  const octetString = wrapTag(0x04, pkcs1Der);
+  const version = new Uint8Array([0x02, 0x01, 0x00]);
+  return wrapSequence(new Uint8Array([...version, ...algoId, ...octetString]));
+}
+
+function pemToDer(rawEnv: string): Uint8Array {
+  let pem = rawEnv.replace(/\\n/g, '\n').trim();
+  
+  const isPkcs8 = pem.includes('BEGIN PRIVATE KEY');
+  
+  const b64 = pem
+    .replace(/-----BEGIN (RSA )?PRIVATE KEY-----/g, '')
+    .replace(/-----END (RSA )?PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
+  
+  const der = base64ToUint8Array(b64);
+  
+  // If PKCS#1, convert to PKCS#8
+  return isPkcs8 ? der : pkcs1ToPkcs8(der);
+}
+
+function uint8ArrayToBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 1024;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -77,15 +68,20 @@ serve(async (req) => {
   }
 
   try {
-    const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!.replace(/\\n/g, '\n');
-    console.log('PEM starts with:', rawPem.substring(0, 40));
-    console.log('PEM contains BEGIN PRIVATE KEY:', rawPem.includes('BEGIN PRIVATE KEY'));
-    console.log('PEM contains BEGIN RSA PRIVATE KEY:', rawPem.includes('BEGIN RSA PRIVATE KEY'));
-    const pkcs8Pem = pemToPkcs8Pem(rawPem);
-    const privateKey = await importPKCS8(pkcs8Pem, 'RS256');
-    const jwk = await exportJWK(privateKey);
+    const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!;
+    const pkcs8Der = pemToDer(rawPem);
+    
+    // Import as extractable so we can export the public components
+    const privateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      pkcs8Der,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      true, // extractable
+      ['sign']
+    );
+    
+    const jwk = await crypto.subtle.exportKey('jwk', privateKey);
 
-    // Only expose public components
     const publicJwk = {
       kty: jwk.kty,
       n: jwk.n,
@@ -100,7 +96,7 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error('JWKS error:', err);
-    return new Response(JSON.stringify({ error: 'Failed to serve JWKS' }), {
+    return new Response(JSON.stringify({ error: 'Failed to serve JWKS', detail: String(err) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
