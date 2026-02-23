@@ -146,6 +146,7 @@ export type Database = {
       }
       polls: {
         Row: {
+          actual_outcome_option_id: string | null
           category: string
           closes_at: string
           created_at: string | null
@@ -166,6 +167,7 @@ export type Database = {
           winning_option_id: string | null
         }
         Insert: {
+          actual_outcome_option_id?: string | null
           category: string
           closes_at: string
           created_at?: string | null
@@ -186,6 +188,7 @@ export type Database = {
           winning_option_id?: string | null
         }
         Update: {
+          actual_outcome_option_id?: string | null
           category?: string
           closes_at?: string
           created_at?: string | null
@@ -205,7 +208,15 @@ export type Database = {
           total_votes?: number | null
           winning_option_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "polls_actual_outcome_option_id_fkey"
+            columns: ["actual_outcome_option_id"]
+            isOneToOne: false
+            referencedRelation: "poll_options"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       referrals: {
         Row: {

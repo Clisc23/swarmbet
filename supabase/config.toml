@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.admin-create-poll]
 verify_jwt = false
+
+[functions.resolve-polymarket]
+verify_jwt = false
+
+[functions.close-polls]
+verify_jwt = false
