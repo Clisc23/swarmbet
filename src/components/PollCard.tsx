@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { getCategoryEmoji, getTimeRemaining } from '@/lib/helpers';
-import { Clock, Users } from 'lucide-react';
+import { Clock, Users, ShieldCheck } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
@@ -19,6 +19,7 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
   const isActive = poll.status === 'active';
   const isClosed = poll.status === 'closed' || poll.status === 'resolved';
   const isUpcoming = poll.status === 'upcoming';
+  const isAnonymous = !!(poll as any).vocdoni_election_id;
   const sortedOptions = [...(poll.poll_options || [])].sort((a, b) => a.display_order - b.display_order);
 
   return (
@@ -42,6 +43,9 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
           )}>
             {poll.status}
           </span>
+          {isAnonymous && (
+            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+          )}
         </div>
         <span className="text-xs text-muted-foreground">Day {poll.day_number}</span>
       </div>
@@ -56,7 +60,8 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
       <div className="mb-3 space-y-2">
         {sortedOptions.map((opt) => {
           const isSelected = userVotedOptionId === opt.id;
-          const percentage = isClosed && poll.total_votes ? Math.round((opt.vote_count || 0) / poll.total_votes * 100) : null;
+          const percentage = isClosed && !isAnonymous && poll.total_votes ? Math.round((opt.vote_count || 0) / poll.total_votes * 100) : 
+                           isClosed && isAnonymous && opt.vote_percentage ? Math.round(opt.vote_percentage) : null;
           const isWinner = opt.is_winner;
           const isConsensus = poll.crowd_consensus_option_id === opt.id;
 

@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.close-polls]
 verify_jwt = false
+
+[functions.create-vocdoni-election]
+verify_jwt = false

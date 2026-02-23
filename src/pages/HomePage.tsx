@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Flame, Target, TrendingUp, Calendar } from 'lucide-react';
 import { formatPoints } from '@/lib/helpers';
+import { castAnonymousVote } from '@/lib/vocdoni';
+import { getWeb3Auth } from '@/lib/web3auth';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
@@ -29,12 +31,39 @@ export default function HomePage() {
   const activePoll = polls?.find((p) => p.status === 'active');
   const recentPolls = polls?.filter((p) => p.status !== 'upcoming').slice(0, 5) || [];
 
-  const handleSubmitVote = useCallback(async (optionId: string, confidence: string) => {
+  const handleSubmitVote = useCallback(async (optionId: string, confidence: string, optionIndex?: number) => {
     if (!votingPoll) return;
     setSubmitting(true);
     try {
+      const isAnonymous = !!(votingPoll as any).vocdoni_election_id;
+      let vocdoniVoteId: string | undefined;
+
+      if (isAnonymous && optionIndex !== undefined) {
+        // Cast anonymous vote via Vocdoni SDK
+        const web3auth = await getWeb3Auth();
+        if (!web3auth.provider) {
+          // Need to connect wallet first
+          await web3auth.connect();
+        }
+        if (!web3auth.provider) throw new Error('Wallet not connected');
+
+        toast.info('Generating ZK proof...', { duration: 5000 });
+        vocdoniVoteId = await castAnonymousVote(
+          web3auth.provider,
+          (votingPoll as any).vocdoni_election_id,
+          optionIndex
+        );
+        // Store choice locally for immediate UI feedback
+        localStorage.setItem(`vote_${votingPoll.id}`, optionId);
+      }
+
       const { data, error } = await supabase.functions.invoke('submit-vote', {
-        body: { poll_id: votingPoll.id, option_id: optionId, confidence },
+        body: {
+          poll_id: votingPoll.id,
+          option_id: isAnonymous ? undefined : optionId,
+          confidence,
+          vocdoni_vote_id: vocdoniVoteId,
+        },
       });
 
       if (error) throw error;
@@ -49,7 +78,9 @@ export default function HomePage() {
       }
 
       toast.success(`+${formatPoints(data.points_earned)} points! 🎯`, {
-        description: `Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''} 🔥`,
+        description: isAnonymous
+          ? `Anonymous vote recorded 🛡️ Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''}`
+          : `Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''} 🔥`,
       });
 
       setVotingPoll(null);

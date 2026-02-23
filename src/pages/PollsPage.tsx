@@ -9,6 +9,8 @@ import { toast } from 'sonner';
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatPoints } from '@/lib/helpers';
+import { castAnonymousVote } from '@/lib/vocdoni';
+import { getWeb3Auth } from '@/lib/web3auth';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
@@ -29,12 +31,34 @@ export default function PollsPage() {
   const closedPolls = polls?.filter(p => p.status === 'closed' || p.status === 'resolved') || [];
   const upcomingPolls = polls?.filter(p => p.status === 'upcoming') || [];
 
-  const handleSubmitVote = useCallback(async (optionId: string, confidence: string) => {
+  const handleSubmitVote = useCallback(async (optionId: string, confidence: string, optionIndex?: number) => {
     if (!votingPoll) return;
     setSubmitting(true);
     try {
+      const isAnonymous = !!(votingPoll as any).vocdoni_election_id;
+      let vocdoniVoteId: string | undefined;
+
+      if (isAnonymous && optionIndex !== undefined) {
+        const web3auth = await getWeb3Auth();
+        if (!web3auth.provider) await web3auth.connect();
+        if (!web3auth.provider) throw new Error('Wallet not connected');
+
+        toast.info('Generating ZK proof...', { duration: 5000 });
+        vocdoniVoteId = await castAnonymousVote(
+          web3auth.provider,
+          (votingPoll as any).vocdoni_election_id,
+          optionIndex
+        );
+        localStorage.setItem(`vote_${votingPoll.id}`, optionId);
+      }
+
       const { data, error } = await supabase.functions.invoke('submit-vote', {
-        body: { poll_id: votingPoll.id, option_id: optionId, confidence },
+        body: {
+          poll_id: votingPoll.id,
+          option_id: isAnonymous ? undefined : optionId,
+          confidence,
+          vocdoni_vote_id: vocdoniVoteId,
+        },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
