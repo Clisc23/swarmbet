@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Session, User } from '@supabase/supabase-js';
 import type { Tables } from '@/integrations/supabase/types';
-import { ensureWalletConnected } from '@/lib/web3auth';
+import { connectWithJwt } from '@/lib/web3auth';
 
 type UserProfile = Tables<'users'>;
 
@@ -12,6 +12,8 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   walletAddress: string | null;
+  web3authJwt: string | null;
+  setWeb3authJwt: (jwt: string | null) => void;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -22,6 +24,8 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   walletAddress: null,
+  web3authJwt: null,
+  setWeb3authJwt: () => {},
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -34,10 +38,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [web3authJwt, setWeb3authJwt] = useState<string | null>(null);
 
-  const connectWallet = async () => {
+  const silentConnectWallet = async (jwt: string) => {
     try {
-      const wallet = await ensureWalletConnected();
+      const wallet = await connectWithJwt(jwt);
       if (wallet) {
         setWalletAddress(wallet.address);
         // Provision wallet in backend
@@ -46,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
     } catch (err) {
-      console.warn('Auto wallet connection failed:', err);
+      console.warn('Silent wallet connection failed:', err);
     }
   };
 
@@ -66,12 +71,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Auto-connect wallet when profile is available
+  // Auto-connect wallet when JWT is available and profile loaded
   useEffect(() => {
-    if (profile && !walletAddress) {
-      connectWallet();
+    if (profile && web3authJwt && !walletAddress) {
+      silentConnectWallet(web3authJwt);
     }
-  }, [profile]);
+  }, [profile, web3authJwt]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -82,6 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setProfile(null);
         setWalletAddress(null);
+        setWeb3authJwt(null);
       }
       setLoading(false);
     });
@@ -102,10 +108,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
     setProfile(null);
     setWalletAddress(null);
+    setWeb3authJwt(null);
   };
 
   return (
-    <AuthContext.Provider value={{ session, authUser, profile, loading, walletAddress, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, authUser, profile, loading, walletAddress, web3authJwt, setWeb3authJwt, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

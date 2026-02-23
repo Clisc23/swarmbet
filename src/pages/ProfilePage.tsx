@@ -24,7 +24,7 @@ export default function ProfilePage() {
   const [claimingReferral, setClaimingReferral] = useState(false);
   const [copied, setCopied] = useState(false);
   const [walletCopied, setWalletCopied] = useState(false);
-  const [provisioningWallet, setProvisioningWallet] = useState(false);
+  const [provisioningWallet] = useState(false);
   const queryClient = useQueryClient();
 
   if (!profile) return null;
@@ -65,22 +65,7 @@ export default function ProfilePage() {
     setTimeout(() => setWalletCopied(false), 2000);
   };
 
-  const handleProvisionWallet = async () => {
-    setProvisioningWallet(true);
-    try {
-      // Generate wallet server-side using the same deterministic method
-      const { data, error } = await supabase.functions.invoke('provision-wallet');
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      await refreshProfile();
-      toast.success('Wallet provisioned! 🎉');
-    } catch (err: any) {
-      console.error('Wallet provisioning error:', err);
-      toast.error(err.message || 'Failed to provision wallet');
-    } finally {
-      setProvisioningWallet(false);
-    }
-  };
+  // Wallet is now auto-provisioned on login via Web3Auth silent connection
 
   const pointTypeIcons: Record<string, string> = {
     signup: '🎉',
@@ -146,15 +131,7 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div>
-              <p className="text-xs text-muted-foreground mb-3">Set up your wallet to receive rewards</p>
-              <Button
-                onClick={handleProvisionWallet}
-                disabled={provisioningWallet}
-                className="w-full rounded-xl gradient-primary text-primary-foreground"
-              >
-                <Wallet className="mr-2 h-4 w-4" />
-                {provisioningWallet ? 'Setting up...' : 'Set Up Wallet'}
-              </Button>
+              <p className="text-xs text-muted-foreground">Wallet will be set up automatically on your next login.</p>
             </div>
           )}
         </div>

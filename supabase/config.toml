@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.provision-wallet]
 verify_jwt = false
+
+[functions.jwks]
+verify_jwt = false

@@ -1,10 +1,13 @@
-import { Web3Auth } from '@web3auth/modal';
+import { Web3Auth, WALLET_CONNECTORS, AUTH_CONNECTION } from '@web3auth/modal';
 import { CHAIN_NAMESPACES, WEB3AUTH_NETWORK } from '@web3auth/modal';
 import { EthereumPrivateKeyProvider } from '@web3auth/ethereum-provider';
 import { createWalletClient, custom } from 'viem';
 import { mainnet } from 'viem/chains';
 
 const WEB3AUTH_CLIENT_ID = 'BKqVmzi9FtXmTw3SRZwnpj4k0d9FFfl_54OPYhOGkEkJYs6FGblWZdvOHRSy5Yc1vc25EkkNEGMTyH_qTguUfEI';
+
+// TODO: Replace with your actual authConnectionId from the Web3Auth dashboard
+const WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID = 'swarmbet-custom-jwt';
 
 const chainConfig = {
   chainNamespace: CHAIN_NAMESPACES.EIP155,
@@ -37,28 +40,42 @@ export async function getWeb3Auth(): Promise<Web3Auth> {
 }
 
 /**
- * Ensure Web3Auth is connected and return the provider + address.
- * Opens the modal only if no cached session exists.
+ * Silently connect Web3Auth using a custom JWT (RS256).
+ * No modal is shown — the JWT proves identity.
  */
-export async function ensureWalletConnected(): Promise<{ provider: any; address: string } | null> {
+export async function connectWithJwt(idToken: string): Promise<{ provider: any; address: string } | null> {
   try {
     const web3auth = await getWeb3Auth();
-    if (!web3auth.connected) {
-      await web3auth.connect();
+
+    // If already connected, just return current wallet
+    if (web3auth.connected && web3auth.provider) {
+      const walletClient = createWalletClient({
+        chain: mainnet,
+        transport: custom(web3auth.provider),
+      });
+      const [address] = await walletClient.getAddresses();
+      if (address) return { provider: web3auth.provider, address };
     }
+
+    // Silent login with custom JWT
+    await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
+      authConnection: AUTH_CONNECTION.CUSTOM,
+      authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
+      idToken,
+    } as any);
+
     if (!web3auth.provider) return null;
 
     const walletClient = createWalletClient({
       chain: mainnet,
       transport: custom(web3auth.provider),
     });
-
     const [address] = await walletClient.getAddresses();
     if (!address) return null;
 
     return { provider: web3auth.provider, address };
   } catch (err) {
-    console.error('Web3Auth wallet connection failed:', err);
+    console.error('Web3Auth silent JWT connection failed:', err);
     return null;
   }
 }
@@ -81,4 +98,11 @@ export async function getWalletAddress(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Get the Web3Auth provider if already connected.
+ */
+export function getWeb3AuthProvider(): any | null {
+  return web3authInstance?.provider ?? null;
 }
