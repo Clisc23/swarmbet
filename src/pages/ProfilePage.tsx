@@ -6,12 +6,13 @@ import { Header } from '@/components/Header';
 import { BottomNav } from '@/components/BottomNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { generateAvatar, formatPoints, getCategoryEmoji } from '@/lib/helpers';
+import { generateAvatar, formatPoints } from '@/lib/helpers';
+import { provisionWallet } from '@/lib/web3auth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  LogOut, Copy, Flame, Target, Trophy, Award, Gift, Check
+  LogOut, Copy, Flame, Target, Trophy, Award, Gift, Check, Wallet
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +23,8 @@ export default function ProfilePage() {
   const [referralInput, setReferralInput] = useState('');
   const [claimingReferral, setClaimingReferral] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [walletCopied, setWalletCopied] = useState(false);
+  const [provisioningWallet, setProvisioningWallet] = useState(false);
   const queryClient = useQueryClient();
 
   if (!profile) return null;
@@ -51,6 +54,34 @@ export default function ProfilePage() {
       toast.error(err.message || 'Invalid referral code');
     } finally {
       setClaimingReferral(false);
+    }
+  };
+
+  const copyWalletAddress = async () => {
+    if (!profile.wallet_address) return;
+    await navigator.clipboard.writeText(profile.wallet_address);
+    setWalletCopied(true);
+    toast.success('Wallet address copied!');
+    setTimeout(() => setWalletCopied(false), 2000);
+  };
+
+  const handleProvisionWallet = async () => {
+    setProvisioningWallet(true);
+    try {
+      const address = await provisionWallet();
+      if (address) {
+        await supabase.from('users').update({ wallet_address: address })
+          .eq('auth_uid', profile.auth_uid);
+        await refreshProfile();
+        toast.success('Wallet provisioned! 🎉');
+      } else {
+        toast.error('Wallet setup was cancelled');
+      }
+    } catch (err: any) {
+      console.error('Wallet provisioning error:', err);
+      toast.error('Failed to provision wallet');
+    } finally {
+      setProvisioningWallet(false);
     }
   };
 
@@ -95,6 +126,40 @@ export default function ProfilePage() {
               <p className="text-[9px] text-muted-foreground">ACCURACY</p>
             </div>
           </div>
+        </div>
+
+        {/* Wallet */}
+        <div className="glass rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Wallet className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">Ethereum Wallet</h3>
+          </div>
+          {profile.wallet_address ? (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Your wallet address</p>
+              <button
+                onClick={copyWalletAddress}
+                className="flex w-full items-center justify-between rounded-xl bg-surface px-4 py-3 transition-colors hover:bg-surface-hover"
+              >
+                <span className="font-mono text-xs text-primary truncate mr-2">
+                  {profile.wallet_address.slice(0, 6)}...{profile.wallet_address.slice(-4)}
+                </span>
+                {walletCopied ? <Check className="h-4 w-4 text-primary shrink-0" /> : <Copy className="h-4 w-4 text-muted-foreground shrink-0" />}
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p className="text-xs text-muted-foreground mb-3">Set up your wallet to receive rewards</p>
+              <Button
+                onClick={handleProvisionWallet}
+                disabled={provisioningWallet}
+                className="w-full rounded-xl gradient-primary text-primary-foreground"
+              >
+                <Wallet className="mr-2 h-4 w-4" />
+                {provisioningWallet ? 'Setting up...' : 'Set Up Wallet'}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Referral */}
