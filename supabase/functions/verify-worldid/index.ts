@@ -161,7 +161,8 @@ serve(async (req) => {
       });
 
       if (!verifyRes.ok) {
-        console.error('World ID verification failed');
+        const verifyBody = await verifyRes.text();
+        console.error('World ID verification failed:', verifyRes.status, verifyBody);
         return new Response(JSON.stringify({ error: 'Verification failed' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
