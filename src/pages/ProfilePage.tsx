@@ -7,7 +7,7 @@ import { BottomNav } from '@/components/BottomNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { generateAvatar, formatPoints } from '@/lib/helpers';
-import { provisionWallet } from '@/lib/web3auth';
+
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -68,18 +68,15 @@ export default function ProfilePage() {
   const handleProvisionWallet = async () => {
     setProvisioningWallet(true);
     try {
-      const address = await provisionWallet();
-      if (address) {
-        await supabase.from('users').update({ wallet_address: address })
-          .eq('auth_uid', profile.auth_uid);
-        await refreshProfile();
-        toast.success('Wallet provisioned! 🎉');
-      } else {
-        toast.error('Wallet setup was cancelled');
-      }
+      // Generate wallet server-side using the same deterministic method
+      const { data, error } = await supabase.functions.invoke('provision-wallet');
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      await refreshProfile();
+      toast.success('Wallet provisioned! 🎉');
     } catch (err: any) {
       console.error('Wallet provisioning error:', err);
-      toast.error('Failed to provision wallet');
+      toast.error(err.message || 'Failed to provision wallet');
     } finally {
       setProvisioningWallet(false);
     }
