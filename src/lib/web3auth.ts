@@ -31,19 +31,6 @@ export async function getWeb3Auth(): Promise<Web3Auth> {
     clientId: WEB3AUTH_CLIENT_ID,
     web3AuthNetwork: WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
     privateKeyProvider: privateKeyProvider as any,
-    modalConfig: {
-      connectors: {
-        [WALLET_CONNECTORS.AUTH]: {
-          label: 'auth',
-          loginMethods: {
-            custom: {
-              name: 'WorldID Login',
-              authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
-            },
-          },
-        },
-      },
-    },
   });
 
   await web3auth.init();
@@ -59,10 +46,11 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
   try {
     console.log('[Web3Auth] connectWithJwt called');
     const web3auth = await getWeb3Auth();
-    console.log('[Web3Auth] init done, connected:', web3auth.connected);
+    console.log('[Web3Auth] init done, status:', web3auth.status, 'connected:', web3auth.connected);
 
     // If already connected, just return current wallet
     if (web3auth.connected && web3auth.provider) {
+      console.log('[Web3Auth] Already connected, returning existing wallet');
       const walletClient = createWalletClient({
         chain: sepolia,
         transport: custom(web3auth.provider),
@@ -71,31 +59,74 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
       if (address) return { provider: web3auth.provider, address };
     }
 
-    // Silent login with custom JWT
+    // Clear any stale session before connecting
+    if (web3auth.connected) {
+      console.log('[Web3Auth] Clearing stale session...');
+      try { await web3auth.logout(); } catch { /* ignore */ }
+    }
+
+    // Silent login with custom JWT — per official docs for Custom JWT
     console.log('[Web3Auth] Calling connectTo with custom JWT...');
-    await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
+    const provider = await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
       authConnection: AUTH_CONNECTION.CUSTOM,
       authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
       idToken,
       extraLoginOptions: {
-        verifierIdField: 'sub',
         isUserIdCaseSensitive: false,
       },
     } as any);
 
-    console.log('[Web3Auth] connectTo completed, provider:', !!web3auth.provider);
-    if (!web3auth.provider) return null;
+    console.log('[Web3Auth] connectTo completed, provider:', !!provider);
+    if (!provider) return null;
 
     const walletClient = createWalletClient({
       chain: sepolia,
-      transport: custom(web3auth.provider),
+      transport: custom(provider),
     });
     const [address] = await walletClient.getAddresses();
     if (!address) return null;
 
-    return { provider: web3auth.provider, address };
+    return { provider, address };
   } catch (err) {
     console.error('[Web3Auth] connectWithJwt FAILED:', err);
+    // If it's a session issue, try clearing and retrying once
+    if (String(err).includes('loginWithSessionId')) {
+      console.log('[Web3Auth] Clearing localStorage session data and retrying...');
+      try {
+        // Clear Web3Auth session data from localStorage
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('web3auth') || key.includes('openlogin') || key.includes('session'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+        
+        // Re-init and retry
+        web3authInstance = null;
+        const web3auth = await getWeb3Auth();
+        const provider = await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
+          authConnection: AUTH_CONNECTION.CUSTOM,
+          authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
+          idToken,
+          extraLoginOptions: {
+            isUserIdCaseSensitive: false,
+          },
+        } as any);
+        
+        if (!provider) return null;
+        const walletClient = createWalletClient({
+          chain: sepolia,
+          transport: custom(provider),
+        });
+        const [address] = await walletClient.getAddresses();
+        return address ? { provider, address } : null;
+      } catch (retryErr) {
+        console.error('[Web3Auth] Retry also failed:', retryErr);
+        return null;
+      }
+    }
     return null;
   }
 }
