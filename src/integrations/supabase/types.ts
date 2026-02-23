@@ -164,6 +164,7 @@ export type Database = {
           resolves_at: string | null
           status: string
           total_votes: number | null
+          vocdoni_election_id: string | null
           winning_option_id: string | null
         }
         Insert: {
@@ -185,6 +186,7 @@ export type Database = {
           resolves_at?: string | null
           status?: string
           total_votes?: number | null
+          vocdoni_election_id?: string | null
           winning_option_id?: string | null
         }
         Update: {
@@ -206,6 +208,7 @@ export type Database = {
           resolves_at?: string | null
           status?: string
           total_votes?: number | null
+          vocdoni_election_id?: string | null
           winning_option_id?: string | null
         }
         Relationships: [
@@ -340,10 +343,11 @@ export type Database = {
           id: string
           is_correct: boolean | null
           matched_consensus: boolean | null
-          option_id: string
+          option_id: string | null
           points_earned: number | null
           poll_id: string
           user_id: string
+          vocdoni_vote_id: string | null
           voted_at: string | null
         }
         Insert: {
@@ -351,10 +355,11 @@ export type Database = {
           id?: string
           is_correct?: boolean | null
           matched_consensus?: boolean | null
-          option_id: string
+          option_id?: string | null
           points_earned?: number | null
           poll_id: string
           user_id: string
+          vocdoni_vote_id?: string | null
           voted_at?: string | null
         }
         Update: {
@@ -362,10 +367,11 @@ export type Database = {
           id?: string
           is_correct?: boolean | null
           matched_consensus?: boolean | null
-          option_id?: string
+          option_id?: string | null
           points_earned?: number | null
           poll_id?: string
           user_id?: string
+          vocdoni_vote_id?: string | null
           voted_at?: string | null
         }
         Relationships: [

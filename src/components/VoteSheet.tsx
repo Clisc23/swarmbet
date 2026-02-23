@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { getCategoryEmoji } from '@/lib/helpers';
 import { Button } from '@/components/ui/button';
-import { Check, ChevronLeft } from 'lucide-react';
+import { Check, ChevronLeft, ShieldCheck } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
 
 interface VoteSheetProps {
   poll: Poll;
-  onSubmit: (optionId: string, confidence: string) => Promise<void>;
+  onSubmit: (optionId: string, confidence: string, optionIndex?: number) => Promise<void>;
   onClose: () => void;
   loading?: boolean;
 }
@@ -25,9 +25,12 @@ export function VoteSheet({ poll, onSubmit, onClose, loading }: VoteSheetProps) 
   const [confidence, setConfidence] = useState<string>('medium');
   const sortedOptions = [...(poll.poll_options || [])].sort((a, b) => a.display_order - b.display_order);
 
+  const isAnonymous = !!(poll as any).vocdoni_election_id;
+
   const handleSubmit = async () => {
     if (!selectedOption) return;
-    await onSubmit(selectedOption, confidence);
+    const optionIndex = sortedOptions.findIndex(o => o.id === selectedOption);
+    await onSubmit(selectedOption, confidence, optionIndex >= 0 ? optionIndex : undefined);
   };
 
   return (
@@ -44,6 +47,12 @@ export function VoteSheet({ poll, onSubmit, onClose, loading }: VoteSheetProps) 
             <span className="text-xs uppercase tracking-wider text-primary font-semibold">Day {poll.day_number}</span>
           </div>
           <h2 className="text-xl font-bold leading-tight">{poll.question}</h2>
+          {isAnonymous && (
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-primary">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span className="font-semibold">Anonymous ZK Vote — your choice is private</span>
+            </div>
+          )}
           {poll.description && (
             <p className="mt-1 text-sm text-muted-foreground">{poll.description}</p>
           )}

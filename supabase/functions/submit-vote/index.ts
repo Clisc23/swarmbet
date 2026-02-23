@@ -30,7 +30,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { poll_id, option_id, confidence } = await req.json();
+    const { poll_id, option_id, confidence, vocdoni_vote_id } = await req.json();
 
     // Get user record
     const { data: user, error: userError } = await supabase
@@ -71,25 +71,30 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Already voted on this poll' }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Insert vote
+    const isAnonymous = !!poll.vocdoni_election_id;
+
+    // Insert vote — for anonymous polls, option_id is NULL (vote is on Vocdoni blockchain)
     await supabase.from('votes').insert({
       user_id: user.id,
       poll_id,
-      option_id,
+      option_id: isAnonymous ? null : option_id,
       confidence,
+      vocdoni_vote_id: vocdoni_vote_id || null,
     });
 
-    // Increment vote count on the selected option
-    const { data: currentOption } = await supabase
-      .from('poll_options')
-      .select('vote_count')
-      .eq('id', option_id)
-      .single();
-    
-    await supabase
-      .from('poll_options')
-      .update({ vote_count: (currentOption?.vote_count || 0) + 1 })
-      .eq('id', option_id);
+    // For non-anonymous polls, increment vote count on selected option
+    if (!isAnonymous && option_id) {
+      const { data: currentOption } = await supabase
+        .from('poll_options')
+        .select('vote_count')
+        .eq('id', option_id)
+        .single();
+      
+      await supabase
+        .from('poll_options')
+        .update({ vote_count: (currentOption?.vote_count || 0) + 1 })
+        .eq('id', option_id);
+    }
 
     // Increment total votes
     await supabase.from('polls').update({ total_votes: (poll.total_votes || 0) + 1 }).eq('id', poll_id);

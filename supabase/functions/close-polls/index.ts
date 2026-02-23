@@ -6,6 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const VOCDONI_API = 'https://api-stg.vocdoni.net/v2';
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -18,7 +20,6 @@ serve(async (req) => {
 
     const now = new Date().toISOString();
 
-    // Support force-closing a specific poll for demo purposes
     let body: any = {};
     try { body = await req.json(); } catch { /* empty body is fine */ }
     const forcePollId = body?.force_poll_id;
@@ -43,19 +44,93 @@ serve(async (req) => {
 
     for (const poll of expiredPolls) {
       const options = poll.poll_options || [];
+      const sortedOptions = [...options].sort((a: any, b: any) => a.display_order - b.display_order);
+      const isAnonymous = !!poll.vocdoni_election_id;
 
-      // 2. Determine crowd consensus — option with most votes
       let consensusOption = null;
       let maxVotes = 0;
-      for (const opt of options) {
-        if ((opt.vote_count || 0) > maxVotes) {
-          maxVotes = opt.vote_count || 0;
-          consensusOption = opt;
+
+      if (isAnonymous) {
+        // Fetch results from Vocdoni blockchain
+        try {
+          const electionRes = await fetch(`${VOCDONI_API}/elections/${poll.vocdoni_election_id}`);
+          if (!electionRes.ok) {
+            const errText = await electionRes.text();
+            console.error(`Failed to fetch Vocdoni election: ${errText}`);
+            // Fall through to close without results
+          } else {
+            const electionData = await electionRes.json();
+            const vocdoniResults = electionData.result; // Array of arrays: result[questionIdx][optionIdx]
+
+            if (vocdoniResults && vocdoniResults.length > 0) {
+              const questionResults = vocdoniResults[0]; // First (only) question
+              
+              // Map Vocdoni option indices back to poll_options
+              for (let i = 0; i < sortedOptions.length && i < questionResults.length; i++) {
+                const voteCount = parseInt(questionResults[i] || '0', 10);
+                // Update the option's vote_count from Vocdoni results
+                await supabase.from('poll_options').update({ vote_count: voteCount }).eq('id', sortedOptions[i].id);
+                sortedOptions[i].vote_count = voteCount;
+                
+                if (voteCount > maxVotes) {
+                  maxVotes = voteCount;
+                  consensusOption = sortedOptions[i];
+                }
+              }
+
+              // Update total votes from Vocdoni
+              const totalVotes = electionData.voteCount || sortedOptions.reduce((sum: number, o: any) => sum + (o.vote_count || 0), 0);
+              await supabase.from('polls').update({ total_votes: totalVotes }).eq('id', poll.id);
+              poll.total_votes = totalVotes;
+            }
+          }
+        } catch (err) {
+          console.error('Vocdoni fetch error:', err);
+        }
+
+        // Now resolve individual votes using vocdoni_vote_id receipts
+        const { data: votes } = await supabase
+          .from('votes')
+          .select('*')
+          .eq('poll_id', poll.id);
+
+        if (votes && votes.length > 0) {
+          for (const vote of votes) {
+            if (vote.vocdoni_vote_id) {
+              try {
+                const voteInfoRes = await fetch(`${VOCDONI_API}/votes/verify/${poll.vocdoni_election_id}/${vote.vocdoni_vote_id}`);
+                if (voteInfoRes.ok) {
+                  const voteInfo = await voteInfoRes.json();
+                  // voteInfo.package contains the encrypted/decrypted vote content
+                  const votePackage = voteInfo.package;
+                  if (votePackage && Array.isArray(votePackage)) {
+                    const chosenIndex = votePackage[0]; // First question's choice
+                    if (chosenIndex >= 0 && chosenIndex < sortedOptions.length) {
+                      const chosenOption = sortedOptions[chosenIndex];
+                      await supabase.from('votes').update({
+                        option_id: chosenOption.id,
+                      }).eq('id', vote.id);
+                      vote.option_id = chosenOption.id;
+                    }
+                  }
+                }
+              } catch (err) {
+                console.error(`Failed to verify vote ${vote.vocdoni_vote_id}:`, err);
+              }
+            }
+          }
+        }
+      } else {
+        // Non-anonymous: determine consensus from existing vote_counts
+        for (const opt of options) {
+          if ((opt.vote_count || 0) > maxVotes) {
+            maxVotes = opt.vote_count || 0;
+            consensusOption = opt;
+          }
         }
       }
 
       if (!consensusOption || maxVotes === 0) {
-        // No votes — just close
         await supabase.from('polls').update({
           status: 'closed',
           resolved_at: now,
@@ -64,7 +139,7 @@ serve(async (req) => {
         continue;
       }
 
-      // 3. Update poll with consensus + winner (crowd consensus = winner)
+      // Update poll with consensus + winner
       await supabase.from('polls').update({
         status: 'resolved',
         crowd_consensus_option_id: consensusOption.id,
@@ -72,19 +147,19 @@ serve(async (req) => {
         resolved_at: now,
       }).eq('id', poll.id);
 
-      // 4. Mark winning option
+      // Mark winning option
       await supabase.from('poll_options').update({ is_winner: true }).eq('id', consensusOption.id);
 
-      // 5. Update vote percentages for all options
+      // Update vote percentages for all options
       const totalVotes = poll.total_votes || 0;
-      for (const opt of options) {
+      for (const opt of (isAnonymous ? sortedOptions : options)) {
         const pct = totalVotes > 0 ? ((opt.vote_count || 0) / totalVotes) * 100 : 0;
         await supabase.from('poll_options').update({
           vote_percentage: Math.round(pct * 100) / 100,
         }).eq('id', opt.id);
       }
 
-      // 6. Get all votes for this poll and score them
+      // Get all votes for this poll and score them
       const { data: votes } = await supabase
         .from('votes')
         .select('*')
@@ -101,7 +176,6 @@ serve(async (req) => {
       for (const vote of votes) {
         const isCorrect = vote.option_id === consensusOption.id;
 
-        // Update vote record
         await supabase.from('votes').update({
           is_correct: isCorrect,
           matched_consensus: isCorrect,
@@ -109,10 +183,8 @@ serve(async (req) => {
         }).eq('id', vote.id);
 
         if (isCorrect) {
-          // Track bonus points per user
           userPointUpdates[vote.user_id] = (userPointUpdates[vote.user_id] || 0) + consensusPoints;
 
-          // Insert points history
           await supabase.from('points_history').insert({
             user_id: vote.user_id,
             amount: consensusPoints,
@@ -123,7 +195,7 @@ serve(async (req) => {
         }
       }
 
-      // 7. Update user stats (points + accuracy)
+      // Update user stats (points + accuracy)
       for (const [userId, bonusPoints] of Object.entries(userPointUpdates)) {
         const { data: user } = await supabase
           .from('users')
@@ -133,7 +205,7 @@ serve(async (req) => {
 
         if (user) {
           const newCorrect = (user.correct_predictions || 0) + 1;
-          const newTotal = user.total_predictions || 1; // fallback to 1 to avoid division by zero
+          const newTotal = user.total_predictions || 1;
           const newAccuracy = newCorrect / newTotal;
 
           await supabase.from('users').update({
@@ -144,17 +216,10 @@ serve(async (req) => {
         }
       }
 
-      // Update total_predictions for users who got it wrong (accuracy tracking)
-      const wrongVoterIds = votes
-        .filter(v => v.option_id !== consensusOption.id)
-        .map(v => v.user_id);
-
-      // No extra update needed — total_predictions was already incremented on vote submission
-      // We only needed to update correct_predictions for winners
-
       results.push({
         poll_id: poll.id,
         status: 'resolved',
+        anonymous: isAnonymous,
         consensus_option: consensusOption.label,
         total_votes: totalVotes,
         correct_voters: Object.keys(userPointUpdates).length,

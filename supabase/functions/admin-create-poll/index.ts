@@ -56,6 +56,7 @@ serve(async (req) => {
         polymarket_slug: poll.polymarket_slug || null,
         points_for_voting: poll.points_for_voting || 1000,
         points_for_consensus: poll.points_for_consensus || 5000,
+        vocdoni_election_id: poll.vocdoni_election_id || null,
       })
       .select()
       .single();
