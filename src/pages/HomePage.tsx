@@ -10,8 +10,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Flame, Target, TrendingUp, Calendar } from 'lucide-react';
 import { formatPoints } from '@/lib/helpers';
-import { castAnonymousVote } from '@/lib/vocdoni';
-import { getWeb3Auth } from '@/lib/web3auth';
+import { handleAnonymousVote } from '@/lib/voting';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
@@ -39,21 +38,7 @@ export default function HomePage() {
       let vocdoniVoteId: string | undefined;
 
       if (isAnonymous && optionIndex !== undefined) {
-        // Cast anonymous vote via Vocdoni SDK
-        const web3auth = await getWeb3Auth();
-        if (!web3auth.provider) {
-          // Need to connect wallet first
-          await web3auth.connect();
-        }
-        if (!web3auth.provider) throw new Error('Wallet not connected');
-
-        toast.info('Generating ZK proof...', { duration: 5000 });
-        vocdoniVoteId = await castAnonymousVote(
-          web3auth.provider,
-          (votingPoll as any).vocdoni_election_id,
-          optionIndex
-        );
-        // Store choice locally for immediate UI feedback
+        vocdoniVoteId = await handleAnonymousVote(votingPoll, optionIndex);
         localStorage.setItem(`vote_${votingPoll.id}`, optionId);
       }
 
