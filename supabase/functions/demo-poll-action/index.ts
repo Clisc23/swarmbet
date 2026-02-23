@@ -6,28 +6,44 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VALID_ACTIONS = ['activate', 'reopen'];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Admin password check
+    const adminPassword = Deno.env.get('ADMIN_PASSWORD');
+    const { poll_id, action, password } = await req.json();
 
-    const { poll_id, action } = await req.json();
+    if (!adminPassword || password !== adminPassword) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    if (!poll_id || !action) {
-      return new Response(JSON.stringify({ error: 'poll_id and action required' }), {
+    // Input validation
+    if (!poll_id || !UUID_RE.test(poll_id)) {
+      return new Response(JSON.stringify({ error: 'Invalid poll ID' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!action || !VALID_ACTIONS.includes(action)) {
+      return new Response(JSON.stringify({ error: 'Invalid action' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const now = new Date();
 
     if (action === 'activate') {
-      // Open an upcoming poll — set opens_at to now, closes_at to 24h from now
       const closesAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
       await supabase.from('polls').update({
         status: 'active',
@@ -41,7 +57,6 @@ serve(async (req) => {
     }
 
     if (action === 'reopen') {
-      // Reopen a closed/resolved poll — reset resolution fields, set new close time
       const closesAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
       await supabase.from('polls').update({
@@ -53,7 +68,6 @@ serve(async (req) => {
         crowd_consensus_option_id: null,
       }).eq('id', poll_id);
 
-      // Reset is_winner and vote_percentage on options
       await supabase.from('poll_options').update({
         is_winner: false,
         vote_percentage: 0,
@@ -64,12 +78,13 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ error: 'Unknown action' }), {
+    return new Response(JSON.stringify({ error: 'Invalid action' }), {
       status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('demo-poll-action error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to process action' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

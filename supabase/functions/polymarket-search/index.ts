@@ -24,20 +24,18 @@ serve(async (req) => {
       });
     }
 
-    // Fetch available tags
     if (action === 'tags') {
       const tagsRes = await fetch(`${GAMMA_API}/tags`);
-      if (!tagsRes.ok) throw new Error(`Tags API error [${tagsRes.status}]`);
+      if (!tagsRes.ok) throw new Error('Failed to fetch tags');
       const tags = await tagsRes.json();
       return new Response(JSON.stringify({ tags }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Fetch sports metadata
     if (action === 'sports') {
       const sportsRes = await fetch(`${GAMMA_API}/sports`);
-      if (!sportsRes.ok) throw new Error(`Sports API error [${sportsRes.status}]`);
+      if (!sportsRes.ok) throw new Error('Failed to fetch sports data');
       const sports = await sportsRes.json();
       return new Response(JSON.stringify({ sports }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -49,27 +47,28 @@ serve(async (req) => {
     const order = validOrders.includes(body.order) ? body.order : 'volume';
     const ascending = body.ascending ?? false;
 
-    // Build Polymarket search URL
+    // Validate numeric inputs
+    const safeLimit = Math.min(Math.max(1, Number(limit) || 20), 100);
+    const safeOffset = Math.max(0, Number(offset) || 0);
+
     const params = new URLSearchParams();
     params.set('active', 'true');
     params.set('closed', 'false');
-    params.set('limit', String(limit));
-    params.set('offset', String(offset));
+    params.set('limit', String(safeLimit));
+    params.set('offset', String(safeOffset));
     params.set('order', order);
     params.set('ascending', String(ascending));
 
-    if (query) params.set('title_contains', query);
+    if (query && typeof query === 'string') params.set('title_contains', query.slice(0, 200));
     if (tag_id) params.set('tag_id', String(tag_id));
     if (end_date_max) params.set('end_date_max', end_date_max);
     if (end_date_min) params.set('end_date_min', end_date_min);
 
     const url = `${GAMMA_API}/events?${params.toString()}`;
-    console.log('Fetching Polymarket:', url);
 
     const res = await fetch(url);
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Polymarket API error [${res.status}]: ${text}`);
+      throw new Error('Failed to search events');
     }
 
     const events = await res.json();
@@ -103,8 +102,8 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    console.error('Error:', err.message);
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('polymarket-search error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to search events' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

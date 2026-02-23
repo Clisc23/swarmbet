@@ -97,7 +97,7 @@ export default function HomePage() {
 
   const handleForceClose = useCallback(async (pollId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } });
+      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } }); // Note: close-polls now requires admin password; this call will fail for non-admin users
       if (error) throw error;
       toast.success('Poll closed & resolved! 🎉');
       queryClient.invalidateQueries({ queryKey: ['polls'] });

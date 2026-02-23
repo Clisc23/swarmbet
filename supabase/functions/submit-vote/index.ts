@@ -6,6 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VALID_CONFIDENCE = ['low', 'medium', 'high'];
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -31,6 +34,20 @@ serve(async (req) => {
     }
 
     const { poll_id, option_id, confidence, vocdoni_vote_id } = await req.json();
+
+    // Input validation
+    if (!poll_id || !UUID_RE.test(poll_id)) {
+      return new Response(JSON.stringify({ error: 'Invalid poll ID' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (option_id && !UUID_RE.test(option_id)) {
+      return new Response(JSON.stringify({ error: 'Invalid option ID' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (!confidence || !VALID_CONFIDENCE.includes(confidence)) {
+      return new Response(JSON.stringify({ error: 'Invalid confidence value' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (vocdoni_vote_id && (typeof vocdoni_vote_id !== 'string' || vocdoni_vote_id.length > 200)) {
+      return new Response(JSON.stringify({ error: 'Invalid vote reference' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // Get user record
     const { data: user, error: userError } = await supabase
@@ -73,7 +90,7 @@ serve(async (req) => {
 
     const isAnonymous = !!poll.vocdoni_election_id;
 
-    // Insert vote — for anonymous polls, option_id is NULL (vote is on Vocdoni blockchain)
+    // Insert vote
     await supabase.from('votes').insert({
       user_id: user.id,
       poll_id,
@@ -82,28 +99,16 @@ serve(async (req) => {
       vocdoni_vote_id: vocdoni_vote_id || null,
     });
 
-    // For non-anonymous polls, increment vote count on selected option
+    // Atomic increment vote count on selected option
     if (!isAnonymous && option_id) {
-      const { data: currentOption } = await supabase
-        .from('poll_options')
-        .select('vote_count')
-        .eq('id', option_id)
-        .single();
-      
-      await supabase
-        .from('poll_options')
-        .update({ vote_count: (currentOption?.vote_count || 0) + 1 })
-        .eq('id', option_id);
+      await supabase.rpc('increment_option_vote_count', { p_option_id: option_id });
     }
 
-    // Increment total votes
-    await supabase.from('polls').update({ total_votes: (poll.total_votes || 0) + 1 }).eq('id', poll_id);
+    // Atomic increment total votes
+    await supabase.rpc('increment_poll_total_votes', { p_poll_id: poll_id });
 
-    // Award points
-    const pointsEarned = 1000;
-    const newBalance = user.swarm_points + pointsEarned;
-    
     // Streak logic
+    const pointsEarned = 1000;
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
     let newStreak = user.current_streak || 0;
@@ -116,15 +121,14 @@ serve(async (req) => {
     }
     if (newStreak > newMaxStreak) newMaxStreak = newStreak;
 
-    const newTotalPredictions = (user.total_predictions || 0) + 1;
-
-    await supabase.from('users').update({
-      swarm_points: newBalance,
-      current_streak: newStreak,
-      max_streak: newMaxStreak,
-      last_voted_date: today,
-      total_predictions: newTotalPredictions,
-    }).eq('id', user.id);
+    // Atomic user stats update
+    await supabase.rpc('update_user_after_vote', {
+      p_user_id: user.id,
+      p_points: pointsEarned,
+      p_new_streak: newStreak,
+      p_new_max_streak: newMaxStreak,
+      p_last_voted_date: today,
+    });
 
     await supabase.from('points_history').insert({
       user_id: user.id,
@@ -133,6 +137,8 @@ serve(async (req) => {
       description: 'Voted on poll',
       poll_id,
     });
+
+    const newBalance = user.swarm_points + pointsEarned;
 
     return new Response(JSON.stringify({
       success: true,
@@ -143,6 +149,7 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    console.error('submit-vote error:', err);
+    return new Response(JSON.stringify({ error: 'Unable to process vote' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

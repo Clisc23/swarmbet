@@ -118,16 +118,16 @@ function PollManager({ password }: { password: string }) {
 
   const handleAction = useCallback(async (pollId: string, action: 'activate' | 'reopen') => {
     try {
-      const { error } = await supabase.functions.invoke('demo-poll-action', { body: { poll_id: pollId, action } });
+      const { error } = await supabase.functions.invoke('demo-poll-action', { body: { poll_id: pollId, action, password } });
       if (error) throw error;
       toast.success(action === 'activate' ? 'Poll activated!' : 'Poll reopened!');
       queryClient.invalidateQueries({ queryKey: ['polls'] });
     } catch (err: any) { toast.error(err.message); }
-  }, [queryClient]);
+  }, [queryClient, password]);
 
   const handleClose = useCallback(async (pollId: string) => {
     try {
-      const { error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } });
+      const { error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId, password } });
       if (error) throw error;
       toast.success('Poll closed & resolved!');
       queryClient.invalidateQueries({ queryKey: ['polls'] });
