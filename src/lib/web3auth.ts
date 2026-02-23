@@ -19,23 +19,45 @@ const chainConfig = {
 };
 
 let web3authInstance: Web3Auth | null = null;
+let initPromise: Promise<Web3Auth> | null = null;
 
 export async function getWeb3Auth(): Promise<Web3Auth> {
   if (web3authInstance) return web3authInstance;
+  if (initPromise) return initPromise;
 
-  const privateKeyProvider = new EthereumPrivateKeyProvider({
-    config: { chainConfig },
-  });
+  initPromise = (async () => {
+    const privateKeyProvider = new EthereumPrivateKeyProvider({
+      config: { chainConfig },
+    });
 
-  const web3auth = new Web3Auth({
-    clientId: WEB3AUTH_CLIENT_ID,
-    web3AuthNetwork: WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
-    privateKeyProvider: privateKeyProvider as any,
-  });
+    const web3auth = new Web3Auth({
+      clientId: WEB3AUTH_CLIENT_ID,
+      web3AuthNetwork: WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
+      privateKeyProvider: privateKeyProvider as any,
+      modalConfig: {
+        connectors: {
+          [WALLET_CONNECTORS.AUTH]: {
+            label: 'Auth',
+            loginMethods: {
+              custom: {
+                name: 'WorldID Login',
+                authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
+                showOnModal: false,
+              },
+            },
+          },
+        },
+      },
+    });
 
-  await web3auth.init();
-  web3authInstance = web3auth;
-  return web3auth;
+    await web3auth.init();
+    console.log('[Web3Auth] init complete, status:', web3auth.status);
+    web3authInstance = web3auth;
+    initPromise = null;
+    return web3auth;
+  })();
+
+  return initPromise;
 }
 
 /**
@@ -65,7 +87,7 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
       try { await web3auth.logout(); } catch { /* ignore */ }
     }
 
-    // Silent login with custom JWT — per official docs for Custom JWT
+    // Silent login with custom JWT
     console.log('[Web3Auth] Calling connectTo with custom JWT...');
     const provider = await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
       authConnection: AUTH_CONNECTION.CUSTOM,
@@ -89,8 +111,8 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
     return { provider, address };
   } catch (err) {
     console.error('[Web3Auth] connectWithJwt FAILED:', err);
-    // If it's a session issue, try clearing and retrying once
-    if (String(err).includes('loginWithSessionId')) {
+    // If it's a session or connector issue, try clearing and retrying once
+    if (String(err).includes('loginWithSessionId') || String(err).includes('not ready yet')) {
       console.log('[Web3Auth] Clearing localStorage session data and retrying...');
       try {
         // Clear Web3Auth session data from localStorage
@@ -105,7 +127,13 @@ export async function connectWithJwt(idToken: string): Promise<{ provider: any; 
         
         // Re-init and retry
         web3authInstance = null;
+        initPromise = null;
         const web3auth = await getWeb3Auth();
+        
+        // Wait a tick for connectors to be fully ready
+        await new Promise(r => setTimeout(r, 500));
+        
+        console.log('[Web3Auth] Retry: status:', web3auth.status, 'connected:', web3auth.connected);
         const provider = await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
           authConnection: AUTH_CONNECTION.CUSTOM,
           authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
