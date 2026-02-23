@@ -347,7 +347,7 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [resolvesIn, setResolvesIn] = useState('');
-  const [sortBy, setSortBy] = useState('volume_24hr');
+  const [sortBy, setSortBy] = useState('volume');
   const [events, setEvents] = useState<PolymarketEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -433,7 +433,6 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
         </select>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
-          <option value="volume_24hr">Sort: 24h Volume</option>
           <option value="volume">Sort: Total Volume</option>
           <option value="liquidity">Sort: Liquidity</option>
           <option value="start_date">Sort: Start Date</option>
