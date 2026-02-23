@@ -37,29 +37,28 @@ export async function getWeb3Auth(): Promise<Web3Auth> {
 }
 
 /**
- * Provision a wallet by connecting through Web3Auth modal.
- * Returns the Ethereum address or null if user cancels.
+ * Ensure Web3Auth is connected and return the provider + address.
+ * Opens the modal only if no cached session exists.
  */
-export async function provisionWallet(): Promise<string | null> {
+export async function ensureWalletConnected(): Promise<{ provider: any; address: string } | null> {
   try {
     const web3auth = await getWeb3Auth();
-    const provider = await web3auth.connect();
-
-    if (!provider) return null;
+    if (!web3auth.connected) {
+      await web3auth.connect();
+    }
+    if (!web3auth.provider) return null;
 
     const walletClient = createWalletClient({
       chain: mainnet,
-      transport: custom(provider),
+      transport: custom(web3auth.provider),
     });
 
     const [address] = await walletClient.getAddresses();
+    if (!address) return null;
 
-    // Disconnect after getting the address — wallet is provisioned
-    await web3auth.logout();
-
-    return address || null;
+    return { provider: web3auth.provider, address };
   } catch (err) {
-    console.error('Web3Auth wallet provisioning failed:', err);
+    console.error('Web3Auth wallet connection failed:', err);
     return null;
   }
 }
