@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const VALID_CATEGORIES = ['sports', 'politics', 'entertainment', 'crypto', 'science', 'finance', 'culture', 'technology', 'other'];
+const VALID_CATEGORIES = ['sports', 'politics', 'entertainment', 'crypto', 'science', 'finance', 'culture', 'technology', 'other', 'soccer', 'tennis', 'golf', 'f1', 'cricket', 'cycling', 'basketball', 'esports'];
 const VALID_STATUSES = ['upcoming', 'active'];
 
 serve(async (req) => {
@@ -34,7 +34,6 @@ serve(async (req) => {
       });
     }
 
-    // Validate poll fields
     if (!poll.question || typeof poll.question !== 'string' || poll.question.trim().length < 5 || poll.question.length > 500) {
       return new Response(JSON.stringify({ error: 'Question must be 5-500 characters' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -73,7 +72,6 @@ serve(async (req) => {
       });
     }
 
-    // Validate options
     for (const opt of options) {
       if (!opt.label || typeof opt.label !== 'string' || opt.label.trim().length === 0 || opt.label.length > 200) {
         return new Response(JSON.stringify({ error: 'Option labels must be 1-200 characters' }), {
@@ -82,7 +80,6 @@ serve(async (req) => {
       }
     }
 
-    // Auto-assign next available day_number
     const { data: maxRow } = await supabase
       .from('polls')
       .select('day_number')
@@ -106,7 +103,9 @@ serve(async (req) => {
         polymarket_slug: poll.polymarket_slug || null,
         points_for_voting: pointsVoting,
         points_for_consensus: pointsConsensus,
-        vocdoni_election_id: poll.vocdoni_election_id || null,
+        // All polls are Vocdoni elections by default — 'pending' means
+        // the on-chain election will be created client-side on first vote
+        vocdoni_election_id: poll.vocdoni_election_id || 'pending',
       })
       .select()
       .single();
