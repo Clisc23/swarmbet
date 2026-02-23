@@ -45,7 +45,7 @@ export default function PollsPage() {
       const { data, error } = await supabase.functions.invoke('submit-vote', {
         body: {
           poll_id: votingPoll.id,
-          option_id: optionId,
+          option_id: isAnonymous ? undefined : optionId,
           confidence,
           vocdoni_vote_id: vocdoniVoteId,
         },

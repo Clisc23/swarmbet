@@ -88,17 +88,20 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Already voted on this poll' }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Insert vote — always store option_id now
+    // Determine if this is an anonymous poll
+    const isAnonymous = !!vocdoni_vote_id;
+
+    // Insert vote — for anonymous polls, don't store option_id to preserve privacy
     await supabase.from('votes').insert({
       user_id: user.id,
       poll_id,
-      option_id: option_id || null,
+      option_id: isAnonymous ? null : (option_id || null),
       confidence,
       vocdoni_vote_id: vocdoni_vote_id || null,
     });
 
-    // Atomic increment vote count on selected option
-    if (option_id) {
+    // Atomic increment vote count on selected option (only for non-anonymous polls)
+    if (!isAnonymous && option_id) {
       await supabase.rpc('increment_option_vote_count', { p_option_id: option_id });
     }
 
