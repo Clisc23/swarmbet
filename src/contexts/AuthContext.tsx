@@ -54,20 +54,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const mintFreshJwtAndConnect = async () => {
     try {
       // Mint a fresh single-use JWT from the backend
+      console.log('[Web3Auth] Minting fresh JWT...');
       const { data, error } = await supabase.functions.invoke('mint-web3auth-jwt', {});
       if (error || !data?.jwt) {
-        console.warn('Failed to mint fresh Web3Auth JWT:', error || data);
+        console.error('[Web3Auth] Failed to mint JWT:', error || data);
         return;
       }
+      console.log('[Web3Auth] JWT minted, connecting wallet...');
       const wallet = await connectWithJwt(data.jwt);
       if (wallet) {
+        console.log('[Web3Auth] Wallet connected:', wallet.address);
         setWalletAddress(wallet.address);
         await supabase.functions.invoke('provision-wallet', {
           body: { wallet_address: wallet.address },
         });
+      } else {
+        console.error('[Web3Auth] connectWithJwt returned null');
       }
     } catch (err) {
-      console.warn('Silent wallet connection failed:', err);
+      console.error('[Web3Auth] Wallet connection failed:', err);
     }
   };
 
