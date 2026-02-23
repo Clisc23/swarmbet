@@ -71,24 +71,37 @@ serve(async (req) => {
     const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!;
     const pkcs8Der = pemToDer(rawPem);
     
-    // Import as extractable so we can export the public components
+    // Import private key as extractable
     const privateKey = await crypto.subtle.importKey(
       'pkcs8',
       pkcs8Der,
       { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-      true, // extractable
+      true,
       ['sign']
     );
     
-    const jwk = await crypto.subtle.exportKey('jwk', privateKey);
+    // Export private key as JWK to get n and e
+    const privJwk = await crypto.subtle.exportKey('jwk', privateKey);
+    
+    // Re-import as public key only (n, e) then export — ensures clean public JWK
+    const pubCryptoKey = await crypto.subtle.importKey(
+      'jwk',
+      { kty: privJwk.kty, n: privJwk.n, e: privJwk.e },
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      true,
+      ['verify']
+    );
+    const pubJwk = await crypto.subtle.exportKey('jwk', pubCryptoKey);
 
     const publicJwk = {
-      kty: jwk.kty,
-      n: jwk.n,
-      e: jwk.e,
+      kty: pubJwk.kty,
       kid: 'swarmbet-1',
       use: 'sig',
       alg: 'RS256',
+      n: pubJwk.n,
+      e: pubJwk.e,
+      key_ops: ['verify'],
+      ext: true,
     };
 
     return new Response(JSON.stringify({ keys: [publicJwk] }), {
