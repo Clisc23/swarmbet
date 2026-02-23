@@ -22,7 +22,7 @@ serve(async (req) => {
     // Find polls that have been crowd-resolved but not yet checked for actual Polymarket resolution
     const { data: polls, error: pollsError } = await supabase
       .from('polls')
-      .select('*, poll_options(*)')
+      .select('*, poll_options!poll_options_poll_id_fkey(*)')
       .eq('status', 'resolved')
       .is('actual_outcome_option_id', null)
       .not('polymarket_event_id', 'is', null);
