@@ -12,9 +12,27 @@ const ACTION = "swarmbet-login";
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
 
+function normalizePem(raw: string): string {
+  // Handle various escape formats: literal \n, \\n, or already real newlines
+  let pem = raw.replace(/\\n/g, '\n').replace(/\\r/g, '');
+  // If the PEM is all on one line (no real newlines between header/footer), reconstruct it
+  if (!pem.includes('\n')) {
+    const match = pem.match(/-----BEGIN (.+?)-----(.*?)-----END (.+?)-----/);
+    if (match) {
+      const body = match[2].replace(/\s/g, '');
+      const chunks = body.match(/.{1,64}/g) || [];
+      pem = `-----BEGIN ${match[1]}-----\n${chunks.join('\n')}\n-----END ${match[3]}-----`;
+    }
+  }
+  // Ensure it ends with a newline
+  if (!pem.endsWith('\n')) pem += '\n';
+  return pem;
+}
+
 async function signWeb3AuthJwt(nullifierHash: string): Promise<string> {
-  const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!.replace(/\\n/g, '\n');
-  const privateKey = await importPKCS8(rawPem, 'RS256');
+  const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!;
+  const pem = normalizePem(rawPem);
+  const privateKey = await importPKCS8(pem, 'RS256');
   return new SignJWT({ sub: nullifierHash })
     .setProtectedHeader({ alg: 'RS256', kid: 'swarmbet-1' })
     .setIssuedAt()
