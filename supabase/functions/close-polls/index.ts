@@ -23,7 +23,7 @@ serve(async (req) => {
     try { body = await req.json(); } catch { /* empty body is fine */ }
     const forcePollId = body?.force_poll_id;
 
-    let query = supabase.from('polls').select('*, poll_options(*)').eq('status', 'active');
+    let query = supabase.from('polls').select('*, poll_options!poll_options_poll_id_fkey(*)').eq('status', 'active');
     if (forcePollId) {
       query = query.eq('id', forcePollId);
     } else {
