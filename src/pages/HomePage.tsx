@@ -42,10 +42,12 @@ export default function HomePage() {
         localStorage.setItem(`vote_${votingPoll.id}`, optionId);
       }
 
+      // Always send option_id so the backend can record the vote
+      // (vocdoniVoteId will be undefined if wallet isn't connected)
       const { data, error } = await supabase.functions.invoke('submit-vote', {
         body: {
           poll_id: votingPoll.id,
-          option_id: isAnonymous ? undefined : optionId,
+          option_id: optionId,
           confidence,
           vocdoni_vote_id: vocdoniVoteId,
         },
