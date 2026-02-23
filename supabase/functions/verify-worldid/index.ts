@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SignJWT, importPKCS8 } from "https://deno.land/x/jose@v5.2.0/index.ts";
+import { SignJWT, importPKCS8, importJWK } from "https://deno.land/x/jose@v5.2.0/index.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,13 +39,69 @@ function normalizePem(raw: string): string {
   return pem;
 }
 
+async function importRsaPrivateKey(pem: string): Promise<CryptoKey> {
+  // Extract base64 body from PEM
+  const body = pem
+    .replace(/-----BEGIN [A-Z ]+-----/g, '')
+    .replace(/-----END [A-Z ]+-----/g, '')
+    .replace(/\s/g, '');
+  const binaryDer = Uint8Array.from(atob(body), c => c.charCodeAt(0));
+
+  const isPkcs1 = pem.includes('RSA PRIVATE KEY');
+
+  if (isPkcs1) {
+    // PKCS#1 format — use WebCrypto importKey with 'pkcs1' isn't supported,
+    // so we wrap PKCS#1 DER into PKCS#8 DER
+    // PKCS#8 wrapping: SEQUENCE { SEQUENCE { OID rsaEncryption, NULL }, OCTET STRING { pkcs1Der } }
+    const rsaOid = new Uint8Array([0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00]);
+    const algorithmIdentifier = wrapSequence(rsaOid);
+    const octetString = wrapTag(0x04, binaryDer);
+    const versionInt = new Uint8Array([0x02, 0x01, 0x00]); // INTEGER 0
+    const pkcs8Der = wrapSequence(new Uint8Array([...versionInt, ...algorithmIdentifier, ...octetString]));
+
+    return crypto.subtle.importKey(
+      'pkcs8', pkcs8Der,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      true, ['sign']
+    );
+  }
+
+  // Already PKCS#8
+  return crypto.subtle.importKey(
+    'pkcs8', binaryDer,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    true, ['sign']
+  );
+}
+
+function wrapTag(tag: number, data: Uint8Array): Uint8Array {
+  const len = encodeLength(data.length);
+  const result = new Uint8Array(1 + len.length + data.length);
+  result[0] = tag;
+  result.set(len, 1);
+  result.set(data, 1 + len.length);
+  return result;
+}
+
+function wrapSequence(data: Uint8Array): Uint8Array {
+  return wrapTag(0x30, data);
+}
+
+function encodeLength(len: number): Uint8Array {
+  if (len < 128) return new Uint8Array([len]);
+  const bytes: number[] = [];
+  let temp = len;
+  while (temp > 0) { bytes.unshift(temp & 0xff); temp >>= 8; }
+  return new Uint8Array([0x80 | bytes.length, ...bytes]);
+}
+
 async function signWeb3AuthJwt(nullifierHash: string): Promise<string> {
   const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!;
   const pem = normalizePem(rawPem);
-  console.log('PEM starts with:', pem.substring(0, 40));
-  console.log('PEM length:', pem.length);
-  console.log('PEM has PRIVATE KEY header:', pem.includes('PRIVATE KEY'));
-  const privateKey = await importPKCS8(pem, 'RS256');
+  const cryptoKey = await importRsaPrivateKey(pem);
+  // Export as JWK and re-import via jose for signing
+  const jwk = await crypto.subtle.exportKey('jwk', cryptoKey);
+  const privateKey = await importJWK({ ...jwk, alg: 'RS256' }, 'RS256');
   return new SignJWT({ sub: nullifierHash })
     .setProtectedHeader({ alg: 'RS256', kid: 'swarmbet-1' })
     .setIssuedAt()
