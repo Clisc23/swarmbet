@@ -111,12 +111,19 @@ serve(async (req) => {
     const authUid = signUpData.user.id;
     const referralCode = username.trim().slice(0, 4).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 
+    // Generate an Ethereum-style wallet address deterministically from nullifier_hash
+    const encoder = new TextEncoder();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(nullifier_hash + authUid));
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const walletAddress = '0x' + hashArray.slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join('');
+
     const { error: profileError } = await supabase.from('users').insert({
       auth_uid: authUid,
       username: username.trim().toLowerCase(),
       display_name: username.trim(),
       nullifier_hash,
       referral_code: referralCode,
+      wallet_address: walletAddress,
     });
 
     if (profileError) {

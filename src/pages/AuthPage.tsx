@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IDKitWidget, ISuccessResult, VerificationLevel } from '@worldcoin/idkit';
 import { supabase } from '@/integrations/supabase/client';
-import { provisionWallet } from '@/lib/web3auth';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -144,17 +144,6 @@ export default function AuthPage() {
           setStep('landing');
           setLoading(false);
           return;
-        }
-
-        // Provision Web3Auth wallet silently after signup
-        try {
-          const walletAddress = await provisionWallet();
-          if (walletAddress) {
-            await supabase.from('users').update({ wallet_address: walletAddress })
-              .eq('auth_uid', (await supabase.auth.getUser()).data.user?.id);
-          }
-        } catch (walletErr) {
-          console.warn('Wallet provisioning skipped:', walletErr);
         }
 
         await refreshProfile();
