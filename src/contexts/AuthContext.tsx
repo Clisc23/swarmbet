@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Session, User } from '@supabase/supabase-js';
 import type { Tables } from '@/integrations/supabase/types';
+import { ensureWalletConnected } from '@/lib/web3auth';
 
 type UserProfile = Tables<'users'>;
 
@@ -10,6 +11,7 @@ interface AuthContextType {
   authUser: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  walletAddress: string | null;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -19,6 +21,7 @@ const AuthContext = createContext<AuthContextType>({
   authUser: null,
   profile: null,
   loading: true,
+  walletAddress: null,
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -30,6 +33,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+
+  const connectWallet = async () => {
+    try {
+      const wallet = await ensureWalletConnected();
+      if (wallet) {
+        setWalletAddress(wallet.address);
+        // Provision wallet in backend
+        await supabase.functions.invoke('provision-wallet', {
+          body: { wallet_address: wallet.address },
+        });
+      }
+    } catch (err) {
+      console.warn('Auto wallet connection failed:', err);
+    }
+  };
 
   const fetchProfile = async (uid: string) => {
     const { data } = await supabase
@@ -47,15 +66,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Auto-connect wallet when profile is available
+  useEffect(() => {
+    if (profile && !walletAddress) {
+      connectWallet();
+    }
+  }, [profile]);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       setAuthUser(session?.user ?? null);
       if (session?.user) {
-        // Use setTimeout to avoid deadlock with Supabase auth
         setTimeout(() => fetchProfile(session.user.id), 0);
       } else {
         setProfile(null);
+        setWalletAddress(null);
       }
       setLoading(false);
     });
@@ -75,10 +101,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     await supabase.auth.signOut();
     setProfile(null);
+    setWalletAddress(null);
   };
 
   return (
-    <AuthContext.Provider value={{ session, authUser, profile, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, authUser, profile, loading, walletAddress, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
