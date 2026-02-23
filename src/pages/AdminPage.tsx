@@ -450,8 +450,7 @@ function PolymarketBrowser({ password, onImport }: { password: string; onImport:
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
           <option value="volume">Sort: Total Volume</option>
           <option value="liquidity">Sort: Liquidity</option>
-          <option value="start_date">Sort: Start Date</option>
-          <option value="end_date">Sort: End Date</option>
+          <option value="created_at">Sort: Newest</option>
         </select>
       </div>
 

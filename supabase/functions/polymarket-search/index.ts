@@ -44,7 +44,10 @@ serve(async (req) => {
       });
     }
 
-    const { query, tag_id, limit = 20, offset = 0, end_date_max, end_date_min, order = 'volume', ascending = false } = body;
+    const { query, tag_id, limit = 20, offset = 0, end_date_max, end_date_min } = body;
+    const validOrders = ['volume', 'liquidity', 'created_at'];
+    const order = validOrders.includes(body.order) ? body.order : 'volume';
+    const ascending = body.ascending ?? false;
 
     // Build Polymarket search URL
     const params = new URLSearchParams();
