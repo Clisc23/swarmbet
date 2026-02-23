@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { castAnonymousVote, createElectionForPoll } from '@/lib/vocdoni';
-import { ensureWalletConnected } from '@/lib/web3auth';
+import { getWeb3AuthProvider, getWalletAddress } from '@/lib/web3auth';
 import { toast } from 'sonner';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -29,14 +29,12 @@ export async function ensureVocdoniElection(
 ): Promise<string> {
   const electionId = (poll as any).vocdoni_election_id as string;
 
-  // Already has a real election ID
   if (electionId && electionId !== 'pending') {
     return electionId;
   }
 
   toast.info('Setting up anonymous election on-chain...', { duration: 8000 });
 
-  // Fetch all voter wallet addresses
   const { data: walletData, error: walletError } = await supabase.functions.invoke('get-voter-wallets', {});
   if (walletError) throw new Error('Failed to fetch voter wallets');
   if (walletData?.error) throw new Error(walletData.error);
@@ -46,7 +44,6 @@ export async function ensureVocdoniElection(
 
   const sortedOptions = [...(poll.poll_options || [])].sort((a, b) => a.display_order - b.display_order);
 
-  // Create election on Vocdoni using user's wallet
   const realElectionId = await createElectionForPoll(
     web3authProvider,
     wallets,
@@ -58,14 +55,12 @@ export async function ensureVocdoniElection(
     sortedOptions.map(o => ({ label: o.label }))
   );
 
-  // Atomically update the poll with the real election ID
   const { data: finalizeData, error: finalizeError } = await supabase.functions.invoke('finalize-election', {
     body: { poll_id: poll.id, election_id: realElectionId },
   });
 
   if (finalizeError) throw new Error('Failed to finalize election');
 
-  // If another voter already finalized, use their election ID
   if (finalizeData?.already_finalized) {
     return finalizeData.election_id;
   }
@@ -74,27 +69,25 @@ export async function ensureVocdoniElection(
 }
 
 /**
- * Handle the full anonymous vote flow:
- * 1. Connect Web3Auth embedded wallet
- * 2. Provision wallet address in backend (for census)
- * 3. Ensure Vocdoni election exists on-chain
- * 4. Cast anonymous vote with ZK proof
- * Returns the vocdoni_vote_id receipt.
+ * Handle the full anonymous vote flow using the already-connected Web3Auth wallet.
+ * The wallet is silently connected during login via custom JWT.
  */
 export async function handleAnonymousVote(
   poll: Poll,
   optionIndex: number
 ): Promise<string> {
-  // Connect Web3Auth embedded wallet (shows modal only on first use)
-  const wallet = await ensureWalletConnected();
-  if (!wallet) throw new Error('Wallet not connected — please try again');
+  const provider = getWeb3AuthProvider();
+  const address = await getWalletAddress();
+  
+  if (!provider || !address) {
+    throw new Error('Wallet not connected — please sign out and sign back in');
+  }
 
-  // Ensure the real wallet address is stored in the backend for the census
-  await ensureWalletProvisioned(wallet.address);
+  await ensureWalletProvisioned(address);
 
-  const electionId = await ensureVocdoniElection(poll, wallet.provider);
+  const electionId = await ensureVocdoniElection(poll, provider);
 
   toast.info('Generating ZK proof...', { duration: 5000 });
-  const voteId = await castAnonymousVote(wallet.provider, electionId, optionIndex);
+  const voteId = await castAnonymousVote(provider, electionId, optionIndex);
   return voteId;
 }

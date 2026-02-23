@@ -17,7 +17,7 @@ type Step = 'landing' | 'verify' | 'username';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { session, profile, refreshProfile } = useAuth();
+  const { session, profile, refreshProfile, setWeb3authJwt } = useAuth();
   const [step, setStep] = useState<Step>('landing');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
@@ -84,6 +84,9 @@ export default function AuthPage() {
           return;
         }
 
+        if (data.web3auth_jwt) {
+          setWeb3authJwt(data.web3auth_jwt);
+        }
         await refreshProfile();
         toast.success('Welcome back! 🎉');
         navigate('/');
@@ -146,6 +149,9 @@ export default function AuthPage() {
           return;
         }
 
+        if (data.web3auth_jwt) {
+          setWeb3authJwt(data.web3auth_jwt);
+        }
         await refreshProfile();
         toast.success('Welcome to SwarmBet! 🎉');
         navigate('/');
