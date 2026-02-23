@@ -23,7 +23,6 @@ serve(async (req) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Verify the calling user via getClaims
     const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -38,10 +37,17 @@ serve(async (req) => {
 
     const userId = claimsData.claims.sub;
 
-    // Get user profile
+    // Accept wallet_address from the client (Web3Auth embedded wallet)
+    const { wallet_address } = await req.json();
+    if (!wallet_address || typeof wallet_address !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(wallet_address)) {
+      return new Response(JSON.stringify({ error: 'Invalid wallet address' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     const { data: profile } = await supabase
       .from('users')
-      .select('id, wallet_address, nullifier_hash, auth_uid')
+      .select('id, wallet_address')
       .eq('auth_uid', userId)
       .single();
 
@@ -51,21 +57,17 @@ serve(async (req) => {
       });
     }
 
-    if (profile.wallet_address) {
-      return new Response(JSON.stringify({ error: 'Wallet already provisioned' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    // If already has this address, no-op
+    if (profile.wallet_address === wallet_address.toLowerCase()) {
+      return new Response(JSON.stringify({ success: true, wallet_address: profile.wallet_address }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Generate deterministic wallet address from nullifier_hash + auth_uid
-    const encoder = new TextEncoder();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(profile.nullifier_hash + profile.auth_uid));
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const walletAddress = '0x' + hashArray.slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join('');
+    const normalized = wallet_address.toLowerCase();
+    await supabase.from('users').update({ wallet_address: normalized }).eq('id', profile.id);
 
-    await supabase.from('users').update({ wallet_address: walletAddress }).eq('id', profile.id);
-
-    return new Response(JSON.stringify({ success: true, wallet_address: walletAddress }), {
+    return new Response(JSON.stringify({ success: true, wallet_address: normalized }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   } catch (err) {
