@@ -1,6 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
 import { castAnonymousVote, createElectionForPoll } from '@/lib/vocdoni';
-import { getWeb3AuthProvider, getWalletAddress } from '@/lib/web3auth';
 import { toast } from 'sonner';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -69,21 +68,20 @@ export async function ensureVocdoniElection(
 }
 
 /**
- * Handle the full anonymous vote flow using the already-connected Web3Auth wallet.
- * The wallet is silently connected during login via custom JWT.
+ * Handle the full anonymous vote flow.
+ * Provider and address are passed from the Auth context (via Web3AuthProvider hooks).
  */
 export async function handleAnonymousVote(
   poll: Poll,
-  optionIndex: number
+  optionIndex: number,
+  provider: any,
+  walletAddress: string
 ): Promise<string | undefined> {
-  const provider = getWeb3AuthProvider();
-  const address = await getWalletAddress();
-  
-  if (!provider || !address) {
+  if (!provider || !walletAddress) {
     throw new Error('Web3Auth wallet not connected — cannot cast anonymous vote');
   }
 
-  await ensureWalletProvisioned(address);
+  await ensureWalletProvisioned(walletAddress);
 
   const electionId = await ensureVocdoniElection(poll, provider);
 
