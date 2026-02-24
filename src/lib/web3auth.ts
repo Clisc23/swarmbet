@@ -24,13 +24,5 @@ export const web3AuthConfig: Web3AuthContextConfig = {
     clientId: WEB3AUTH_CLIENT_ID,
     web3AuthNetwork: WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
     privateKeyProvider: privateKeyProvider as any,
-    modalConfig: {
-      connectors: {
-        [WALLET_CONNECTORS.AUTH]: {
-          label: 'Auth',
-          showOnModal: false,
-        },
-      },
-    },
   },
 };
