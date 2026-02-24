@@ -88,8 +88,46 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Already voted on this poll' }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Determine if this is an anonymous poll
-    const isAnonymous = !!vocdoni_vote_id;
+    // Determine if this is an anonymous poll (has Vocdoni election)
+    const isAnonymous = !!poll.vocdoni_election_id;
+    let vocdoniVoteId = vocdoni_vote_id || null;
+
+    // For Vocdoni-enabled polls, cast the vote on-chain server-side
+    if (isAnonymous && !vocdoniVoteId && option_id) {
+      try {
+        // Find the option index for Vocdoni
+        const { data: options } = await supabase
+          .from('poll_options')
+          .select('id, display_order')
+          .eq('poll_id', poll_id)
+          .order('display_order');
+
+        const optionIndex = options?.findIndex(o => o.id === option_id) ?? -1;
+
+        if (optionIndex >= 0) {
+          // Call cast-vocdoni-vote internally
+          const castRes = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/cast-vocdoni-vote`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': req.headers.get('Authorization')!,
+              'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
+            },
+            body: JSON.stringify({
+              election_id: poll.vocdoni_election_id,
+              option_index: optionIndex,
+            }),
+          });
+
+          const castData = await castRes.json();
+          if (castData.vocdoni_vote_id) {
+            vocdoniVoteId = castData.vocdoni_vote_id;
+          }
+        }
+      } catch (err) {
+        console.error('Vocdoni vote casting failed (non-blocking):', err);
+      }
+    }
 
     // Insert vote — for anonymous polls, don't store option_id to preserve privacy
     await supabase.from('votes').insert({
@@ -97,7 +135,7 @@ serve(async (req) => {
       poll_id,
       option_id: isAnonymous ? null : (option_id || null),
       confidence,
-      vocdoni_vote_id: vocdoni_vote_id || null,
+      vocdoni_vote_id: vocdoniVoteId,
     });
 
     // Atomic increment vote count on selected option (only for non-anonymous polls)

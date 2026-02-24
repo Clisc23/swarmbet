@@ -15,6 +15,9 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     include: ['@worldcoin/idkit', '@worldcoin/idkit-core'],
   },
+  define: {
+    global: 'globalThis',
+  },
   plugins: [
     react(),
     mode === "development" && componentTagger(),

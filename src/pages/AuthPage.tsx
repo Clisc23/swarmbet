@@ -17,7 +17,7 @@ type Step = 'landing' | 'verify' | 'username';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { session, profile, refreshProfile } = useAuth();
+  const { session, profile, refreshProfile, connectWallet } = useAuth();
   const [step, setStep] = useState<Step>('landing');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,8 +30,6 @@ export default function AuthPage() {
   }, [session, profile, navigate]);
 
   const handleVerify = async (result: ISuccessResult) => {
-    // This is called by IDKit before onSuccess to let you verify on backend
-    // We do the actual verification in onSuccess
     console.log('IDKit verify callback:', result);
   };
 
@@ -65,7 +63,6 @@ export default function AuthPage() {
       }
 
       if (data.needs_username) {
-        // New user — ask for username
         setStep('username');
         return;
       }
@@ -84,7 +81,11 @@ export default function AuthPage() {
           return;
         }
 
-        // Web3Auth JWT is now handled automatically by the provider
+        // Silently connect Web3Auth wallet using the JWT
+        if (data.web3auth_jwt) {
+          connectWallet(data.web3auth_jwt).catch(console.error);
+        }
+
         await refreshProfile();
         toast.success('Welcome back! 🎉');
         navigate('/');
@@ -147,7 +148,11 @@ export default function AuthPage() {
           return;
         }
 
-        // Web3Auth JWT is now handled automatically by the provider
+        // Silently connect Web3Auth wallet using the JWT
+        if (data.web3auth_jwt) {
+          connectWallet(data.web3auth_jwt).catch(console.error);
+        }
+
         await refreshProfile();
         toast.success('Welcome to SwarmBet! 🎉');
         navigate('/');
@@ -161,63 +166,97 @@ export default function AuthPage() {
 
   if (step === 'verify') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center px-6">
-        <div className="flex flex-col items-center gap-6 text-center">
-          <div className="relative">
-            <div className="h-24 w-24 rounded-full border-2 border-primary/30 animate-pulse-glow flex items-center justify-center">
-              <Globe className="h-10 w-10 text-primary animate-spin" style={{ animationDuration: '3s' }} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-xl font-bold">Verifying with World ID</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Checking your proof of personhood...</p>
-          </div>
-          <div className="flex gap-1">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-2 w-2 rounded-full bg-primary animate-pulse" style={{ animationDelay: `${i * 0.3}s` }} />
-            ))}
-          </div>
-        </div>
-      </div>
+      <VerifyingScreen />
     );
   }
 
   if (step === 'username') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center px-6">
-        <div className="w-full max-w-sm space-y-6">
-          <div className="text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl gradient-primary">
-              <Shield className="h-8 w-8 text-primary-foreground" />
-            </div>
-            <h2 className="text-2xl font-bold">Verified Human ✓</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Choose your SwarmBet identity</p>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Username</label>
-              <Input
-                value={username}
-                onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
-                placeholder="satoshi_nakamoto"
-                className="rounded-xl border-border bg-surface py-6 text-base"
-                maxLength={20}
-              />
-              <p className="mt-1 text-xs text-muted-foreground">3-20 characters, letters, numbers, underscores</p>
-            </div>
-            <Button
-              onClick={handleCreateAccount}
-              disabled={loading || username.length < 3}
-              className="w-full rounded-xl py-6 text-base font-bold gradient-primary text-primary-foreground hover:opacity-90"
-            >
-              {loading ? 'Creating...' : 'Enter the Swarm'}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <UsernameScreen
+        username={username}
+        setUsername={setUsername}
+        loading={loading}
+        onSubmit={handleCreateAccount}
+      />
     );
   }
 
+  return (
+    <LandingScreen
+      onVerify={handleVerify}
+      onSuccess={handleWorldIdSuccess}
+    />
+  );
+}
+
+function VerifyingScreen() {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center px-6">
+      <div className="flex flex-col items-center gap-6 text-center">
+        <div className="relative">
+          <div className="h-24 w-24 rounded-full border-2 border-primary/30 animate-pulse-glow flex items-center justify-center">
+            <Globe className="h-10 w-10 text-primary animate-spin" style={{ animationDuration: '3s' }} />
+          </div>
+        </div>
+        <div>
+          <h2 className="text-xl font-bold">Verifying with World ID</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Checking your proof of personhood...</p>
+        </div>
+        <div className="flex gap-1">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-2 w-2 rounded-full bg-primary animate-pulse" style={{ animationDelay: `${i * 0.3}s` }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UsernameScreen({ username, setUsername, loading, onSubmit }: {
+  username: string;
+  setUsername: (v: string) => void;
+  loading: boolean;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center px-6">
+      <div className="w-full max-w-sm space-y-6">
+        <div className="text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl gradient-primary">
+            <Shield className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h2 className="text-2xl font-bold">Verified Human ✓</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Choose your SwarmBet identity</p>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">Username</label>
+            <Input
+              value={username}
+              onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
+              placeholder="satoshi_nakamoto"
+              className="rounded-xl border-border bg-surface py-6 text-base"
+              maxLength={20}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">3-20 characters, letters, numbers, underscores</p>
+          </div>
+          <Button
+            onClick={onSubmit}
+            disabled={loading || username.length < 3}
+            className="w-full rounded-xl py-6 text-base font-bold gradient-primary text-primary-foreground hover:opacity-90"
+          >
+            {loading ? 'Creating...' : 'Enter the Swarm'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LandingScreen({ onVerify, onSuccess }: {
+  onVerify: (result: ISuccessResult) => void;
+  onSuccess: (result: ISuccessResult) => void;
+}) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-between px-6 py-12">
       <div />
@@ -257,8 +296,8 @@ export default function AuthPage() {
           app_id={WORLD_ID_APP_ID as `app_${string}`}
           action={WORLD_ID_ACTION}
           verification_level={VerificationLevel.Device}
-          handleVerify={handleVerify}
-          onSuccess={handleWorldIdSuccess}
+          handleVerify={onVerify}
+          onSuccess={onSuccess}
         >
           {({ open }) => (
             <Button
