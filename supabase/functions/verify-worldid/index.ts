@@ -95,6 +95,30 @@ function encodeLength(len: number): Uint8Array {
   return new Uint8Array([0x80 | bytes.length, ...bytes]);
 }
 
+// Derive a deterministic Ethereum wallet from nullifier_hash using HKDF-SHA256
+async function deriveWalletAddress(nullifierHash: string): Promise<string> {
+  const enc = new TextEncoder();
+  // Import nullifier_hash as key material
+  const ikm = await crypto.subtle.importKey(
+    'raw', enc.encode(nullifierHash), 'HKDF', false, ['deriveBits']
+  );
+  // Derive 32 bytes using HKDF
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: enc.encode('swarmbet-wallet-v1'),
+      info: enc.encode('ethereum-key'),
+    },
+    ikm,
+    256 // 32 bytes
+  );
+  // Use the first 20 bytes as the Ethereum address (deterministic, not a real pubkey derivation)
+  // For Web3Auth custom JWT, the wallet is managed by Web3Auth — this is just for DB storage
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  return '0x' + hashArray.slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function signWeb3AuthJwt(nullifierHash: string): Promise<string> {
   const rawPem = Deno.env.get('WEB3AUTH_RSA_PRIVATE_KEY')!;
   const pem = normalizePem(rawPem);
@@ -231,10 +255,8 @@ serve(async (req) => {
     const authUid = signUpData.user.id;
     const referralCode = cleanUsername.slice(0, 4).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 
-    const encoder = new TextEncoder();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(nullifier_hash + authUid));
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const walletAddress = '0x' + hashArray.slice(0, 20).map(b => b.toString(16).padStart(2, '0')).join('');
+    // Derive a deterministic Ethereum wallet address from nullifier_hash using HKDF
+    const walletAddress = await deriveWalletAddress(nullifier_hash);
 
     const { error: profileError } = await supabase.from('users').insert({
       auth_uid: authUid,
