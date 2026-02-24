@@ -22,6 +22,9 @@ export default defineConfig(({ mode }) => ({
       include: ['buffer', 'util', 'stream', 'events', 'process'],
       globals: { Buffer: true, global: true, process: true },
       protocolImports: true,
+      overrides: {
+        process: 'process/browser',
+      },
     }),
     mode === "development" && componentTagger(),
   ].filter(Boolean),
