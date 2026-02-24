@@ -2,7 +2,12 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { supabase } from '@/integrations/supabase/client';
 import type { Session, User } from '@supabase/supabase-js';
 import type { Tables } from '@/integrations/supabase/types';
-import { connectWithJwt, getWeb3Auth, getWalletAddress } from '@/lib/web3auth';
+import { useWeb3Auth } from '@web3auth/modal/react';
+import { useWeb3AuthConnect } from '@web3auth/modal/react';
+import { WALLET_CONNECTORS, AUTH_CONNECTION } from '@web3auth/modal';
+import { WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID } from '@/lib/web3auth';
+import { createWalletClient, custom } from 'viem';
+import { sepolia } from 'viem/chains';
 
 type UserProfile = Tables<'users'>;
 
@@ -12,8 +17,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   walletAddress: string | null;
-  web3authJwt: string | null;
-  setWeb3authJwt: (jwt: string | null) => void;
+  web3authProvider: any;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -24,8 +28,7 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   walletAddress: null,
-  web3authJwt: null,
-  setWeb3authJwt: () => {},
+  web3authProvider: null,
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -39,42 +42,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const connectingRef = useRef(false);
-  const [web3authJwt, setWeb3authJwtState] = useState<string | null>(() => {
-    try { return sessionStorage.getItem('web3auth_jwt'); } catch { return null; }
-  });
 
-  const setWeb3authJwt = (jwt: string | null) => {
-    setWeb3authJwtState(jwt);
-    try {
-      if (jwt) sessionStorage.setItem('web3auth_jwt', jwt);
-      else sessionStorage.removeItem('web3auth_jwt');
-    } catch { /* ignore */ }
-  };
+  const { provider: web3authProvider, isConnected: web3authConnected, isInitialized } = useWeb3Auth();
+  const { connectTo } = useWeb3AuthConnect();
 
-  const mintFreshJwtAndConnect = async () => {
-    try {
-      // Mint a fresh single-use JWT from the backend
-      console.log('[Web3Auth] Minting fresh JWT...');
-      const { data, error } = await supabase.functions.invoke('mint-web3auth-jwt', {});
-      if (error || !data?.jwt) {
-        console.error('[Web3Auth] Failed to mint JWT:', error || data);
-        return;
-      }
-      console.log('[Web3Auth] JWT minted, connecting wallet...');
-      const wallet = await connectWithJwt(data.jwt);
-      if (wallet) {
-        console.log('[Web3Auth] Wallet connected:', wallet.address);
-        setWalletAddress(wallet.address);
-        await supabase.functions.invoke('provision-wallet', {
-          body: { wallet_address: wallet.address },
-        });
-      } else {
-        console.error('[Web3Auth] connectWithJwt returned null');
-      }
-    } catch (err) {
-      console.error('[Web3Auth] Wallet connection failed:', err);
+  // Derive wallet address from Web3Auth provider when connected
+  useEffect(() => {
+    if (!web3authConnected || !web3authProvider) {
+      setWalletAddress(null);
+      return;
     }
-  };
+
+    const deriveAddress = async () => {
+      try {
+        const walletClient = createWalletClient({
+          chain: sepolia,
+          transport: custom(web3authProvider),
+        });
+        const [address] = await walletClient.getAddresses();
+        if (address) {
+          setWalletAddress(address);
+          await supabase.functions.invoke('provision-wallet', {
+            body: { wallet_address: address },
+          });
+        }
+      } catch (err) {
+        console.error('[Web3Auth] Failed to derive address:', err);
+      }
+    };
+
+    deriveAddress();
+  }, [web3authConnected, web3authProvider]);
+
+  // Auto-connect wallet when profile loaded and Web3Auth is initialized but not connected
+  useEffect(() => {
+    if (!profile) return;
+    if (web3authConnected) return;
+    if (!isInitialized) return;
+
+    const tryConnect = async () => {
+      if (connectingRef.current) return;
+      connectingRef.current = true;
+      try {
+        console.log('[Web3Auth] Minting fresh JWT...');
+        const { data, error } = await supabase.functions.invoke('mint-web3auth-jwt', {});
+        if (error || !data?.jwt) {
+          console.error('[Web3Auth] Failed to mint JWT:', error || data);
+          return;
+        }
+        console.log('[Web3Auth] JWT minted, connecting wallet via hook...');
+        await connectTo(WALLET_CONNECTORS.AUTH, {
+          authConnection: AUTH_CONNECTION.CUSTOM,
+          authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
+          idToken: data.jwt,
+          extraLoginOptions: {
+            isUserIdCaseSensitive: false,
+          },
+        } as any);
+        console.log('[Web3Auth] connectTo completed');
+      } catch (err) {
+        console.error('[Web3Auth] Wallet connection failed:', err);
+      } finally {
+        connectingRef.current = false;
+      }
+    };
+
+    tryConnect();
+  }, [profile, web3authConnected, isInitialized, connectTo]);
 
   const fetchProfile = async (uid: string) => {
     const { data } = await supabase
@@ -92,41 +126,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Auto-connect wallet when JWT is available and profile loaded
-  // Also try to recover an existing Web3Auth session on mount
-  useEffect(() => {
-    if (!profile) return;
-    if (walletAddress) return;
-
-    const tryConnect = async () => {
-      if (connectingRef.current) return;
-      connectingRef.current = true;
-      try {
-        // First check if Web3Auth already has a session (persisted by its SDK)
-        try {
-          const web3auth = await getWeb3Auth();
-          if (web3auth.connected && web3auth.provider) {
-            const addr = await getWalletAddress();
-            if (addr) {
-              setWalletAddress(addr);
-              await supabase.functions.invoke('provision-wallet', {
-                body: { wallet_address: addr },
-              });
-              return;
-            }
-          }
-        } catch { /* no existing session */ }
-
-        // Mint a fresh JWT and connect (old JWT may be single-use / expired)
-        await mintFreshJwtAndConnect();
-      } finally {
-        connectingRef.current = false;
-      }
-    };
-
-    tryConnect();
-  }, [profile]);
-
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
@@ -136,7 +135,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setProfile(null);
         setWalletAddress(null);
-        setWeb3authJwt(null);
       }
       setLoading(false);
     });
@@ -157,11 +155,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
     setProfile(null);
     setWalletAddress(null);
-    setWeb3authJwt(null);
   };
 
   return (
-    <AuthContext.Provider value={{ session, authUser, profile, loading, walletAddress, web3authJwt, setWeb3authJwt, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, authUser, profile, loading, walletAddress, web3authProvider, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

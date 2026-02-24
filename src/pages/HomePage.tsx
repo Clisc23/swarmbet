@@ -16,7 +16,7 @@ import type { Tables } from '@/integrations/supabase/types';
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
 
 export default function HomePage() {
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, web3authProvider, walletAddress } = useAuth();
   const { data: polls, isLoading } = usePolls();
   const { data: userVotes } = useUserVotes(profile?.id);
   const [votingPoll, setVotingPoll] = useState<Poll | null>(null);
@@ -38,7 +38,7 @@ export default function HomePage() {
       let vocdoniVoteId: string | undefined;
 
       if (isAnonymous && optionIndex !== undefined) {
-        vocdoniVoteId = await handleAnonymousVote(votingPoll, optionIndex);
+        vocdoniVoteId = await handleAnonymousVote(votingPoll, optionIndex, web3authProvider, walletAddress!);
         localStorage.setItem(`vote_${votingPoll.id}`, optionId);
       }
 
