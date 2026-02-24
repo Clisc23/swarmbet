@@ -63,7 +63,10 @@ serve(async (req) => {
         const markets = event.markets || [];
 
         let winningOutcomeLabel: string | null = null;
+        let matchedOption: any = null;
+        const options = poll.poll_options || [];
 
+        // Strategy 1: Find a market whose resolved outcome directly matches a poll option
         for (const market of markets) {
           if (!market.closed) continue;
 
@@ -76,30 +79,34 @@ serve(async (req) => {
 
           for (let i = 0; i < outcomes.length; i++) {
             if (prices[i] >= 0.95) {
+              let candidateLabel: string;
               if (outcomes[i] === 'Yes') {
-                winningOutcomeLabel = market.question || market.groupItemTitle || outcomes[i];
-              } else if (outcomes[i] !== 'No') {
-                winningOutcomeLabel = outcomes[i];
+                candidateLabel = market.question || market.groupItemTitle || outcomes[i];
+              } else if (outcomes[i] === 'No') {
+                continue; // Skip "No" outcomes
+              } else {
+                candidateLabel = outcomes[i];
               }
-              break;
+
+              // Try to match against poll options
+              const match = options.find((opt: any) => {
+                const optL = opt.label.toLowerCase().trim();
+                const winL = candidateLabel.toLowerCase().trim();
+                return optL === winL || winL.includes(optL) || optL.includes(winL);
+              });
+
+              if (match) {
+                winningOutcomeLabel = candidateLabel;
+                matchedOption = match;
+                break;
+              }
             }
           }
-          if (winningOutcomeLabel) break;
+          if (matchedOption) break;
         }
-
-        if (!winningOutcomeLabel) {
-          continue;
-        }
-
-        const options = poll.poll_options || [];
-        const matchedOption = options.find((opt: any) => {
-          const optLabel = opt.label.toLowerCase().trim();
-          const winLabel = winningOutcomeLabel!.toLowerCase().trim();
-          return optLabel === winLabel || winLabel.includes(optLabel) || optLabel.includes(winLabel);
-        });
 
         if (!matchedOption) {
-          console.log(`No matching option for poll ${poll.id}`);
+          console.log(`No matching option for poll ${poll.id}, options=[${options.map((o: any) => o.label).join(', ')}]`);
           continue;
         }
 
