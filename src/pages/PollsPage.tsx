@@ -9,13 +9,12 @@ import { toast } from 'sonner';
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { formatPoints } from '@/lib/helpers';
-import { handleAnonymousVote } from '@/lib/voting';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
 
 export default function PollsPage() {
-  const { profile, web3authProvider, walletAddress } = useAuth();
+  const { profile } = useAuth();
   const { data: polls, isLoading } = usePolls();
   const { data: userVotes } = useUserVotes(profile?.id);
   const [votingPoll, setVotingPoll] = useState<Poll | null>(null);
@@ -30,24 +29,15 @@ export default function PollsPage() {
   const closedPolls = polls?.filter(p => p.status === 'closed' || p.status === 'resolved') || [];
   const upcomingPolls = polls?.filter(p => p.status === 'upcoming') || [];
 
-  const handleSubmitVote = useCallback(async (optionId: string, confidence: string, optionIndex?: number) => {
+  const handleSubmitVote = useCallback(async (optionId: string, confidence: string) => {
     if (!votingPoll) return;
     setSubmitting(true);
     try {
-      const isAnonymous = !!(votingPoll as any).vocdoni_election_id;
-      let vocdoniVoteId: string | undefined;
-
-      if (isAnonymous && optionIndex !== undefined) {
-        vocdoniVoteId = await handleAnonymousVote(votingPoll, optionIndex, web3authProvider, walletAddress!);
-        localStorage.setItem(`vote_${votingPoll.id}`, optionId);
-      }
-
       const { data, error } = await supabase.functions.invoke('submit-vote', {
         body: {
           poll_id: votingPoll.id,
-          option_id: isAnonymous ? undefined : optionId,
+          option_id: optionId,
           confidence,
-          vocdoni_vote_id: vocdoniVoteId,
         },
       });
       if (error) throw error;
@@ -66,7 +56,7 @@ export default function PollsPage() {
 
   const handleForceClose = useCallback(async (pollId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } }); // Note: close-polls now requires admin password; this call will fail for non-admin users
+      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } });
       if (error) throw error;
       toast.success('Poll closed & resolved! 🎉');
       queryClient.invalidateQueries({ queryKey: ['polls'] });
