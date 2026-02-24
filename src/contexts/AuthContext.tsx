@@ -4,6 +4,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import type { Tables } from '@/integrations/supabase/types';
 import { useWeb3Auth, useWeb3AuthConnect, useWeb3AuthDisconnect } from '@web3auth/modal/react';
 import { WALLET_CONNECTORS, AUTH_CONNECTION } from '@web3auth/modal';
+import { WEB3AUTH_AUTH_CONNECTION_ID } from '@/lib/web3auth';
 
 type UserProfile = Tables<'users'>;
 
@@ -92,7 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await connectTo(WALLET_CONNECTORS.AUTH, {
         authConnection: AUTH_CONNECTION.CUSTOM,
-        authConnectionId: 'swarmbet-worldid',
+        authConnectionId: WEB3AUTH_AUTH_CONNECTION_ID,
         idToken: jwt,
         extraLoginOptions: {
           isUserIdCaseSensitive: false,
