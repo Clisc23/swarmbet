@@ -68,33 +68,6 @@ export default function HomePage() {
     }
   }, [votingPoll, queryClient, refreshProfile]);
 
-  const handleForceClose = useCallback(async (pollId: string) => {
-    try {
-      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } });
-      if (error) throw error;
-      toast.success('Poll closed & resolved! 🎉');
-      queryClient.invalidateQueries({ queryKey: ['polls'] });
-      queryClient.invalidateQueries({ queryKey: ['user-votes'] });
-      queryClient.invalidateQueries({ queryKey: ['points-history'] });
-      refreshProfile();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to close poll');
-    }
-  }, [queryClient, refreshProfile]);
-
-  const handleDemoAction = useCallback(async (pollId: string, action: 'reopen' | 'activate') => {
-    try {
-      const { error } = await supabase.functions.invoke('demo-poll-action', { body: { poll_id: pollId, action } });
-      if (error) throw error;
-      toast.success(action === 'reopen' ? 'Poll reopened! 🔄' : 'Poll activated! ▶️');
-      queryClient.invalidateQueries({ queryKey: ['polls'] });
-      queryClient.invalidateQueries({ queryKey: ['user-votes'] });
-      queryClient.invalidateQueries({ queryKey: ['points-history'] });
-      refreshProfile();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update poll');
-    }
-  }, [queryClient, refreshProfile]);
 
   const campaignDay = polls?.find(p => p.status === 'active')?.day_number || 0;
 
@@ -129,9 +102,6 @@ export default function HomePage() {
               poll={activePoll}
               userVotedOptionId={votedPollMap.get(activePoll.id)}
               onVote={setVotingPoll}
-              onForceClose={handleForceClose}
-              onReopen={(id) => handleDemoAction(id, 'reopen')}
-              onActivate={(id) => handleDemoAction(id, 'activate')}
             />
           </section>
         )}
@@ -161,9 +131,6 @@ export default function HomePage() {
                   poll={poll}
                   userVotedOptionId={votedPollMap.get(poll.id)}
                   onVote={setVotingPoll}
-                  onForceClose={handleForceClose}
-                  onReopen={(id) => handleDemoAction(id, 'reopen')}
-                  onActivate={(id) => handleDemoAction(id, 'activate')}
                 />
               ))}
             </div>
