@@ -1,4 +1,4 @@
-import { CHAIN_NAMESPACES, WEB3AUTH_NETWORK } from '@web3auth/modal';
+import { CHAIN_NAMESPACES, WEB3AUTH_NETWORK, WALLET_CONNECTORS } from '@web3auth/modal';
 import { EthereumPrivateKeyProvider } from '@web3auth/ethereum-provider';
 import type { Web3AuthContextConfig } from '@web3auth/modal/react';
 
@@ -24,5 +24,19 @@ export const web3AuthConfig: Web3AuthContextConfig = {
     clientId: WEB3AUTH_CLIENT_ID,
     web3AuthNetwork: WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
     privateKeyProvider: privateKeyProvider as any,
+    modalConfig: {
+      connectors: {
+        [WALLET_CONNECTORS.AUTH]: {
+          label: 'Auth',
+          showOnModal: false,
+          loginMethods: {
+            custom: {
+              name: 'WorldID Login',
+              showOnModal: false,
+            },
+          },
+        },
+      },
+    },
   },
 };

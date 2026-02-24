@@ -95,9 +95,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           authConnection: AUTH_CONNECTION.CUSTOM,
           authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
           idToken: data.jwt,
-          extraLoginOptions: {
-            isUserIdCaseSensitive: false,
-          },
         } as any);
         console.log('[Web3Auth] connectTo completed');
       } catch (err) {
