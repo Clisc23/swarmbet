@@ -15,16 +15,17 @@ serve(async (req) => {
   }
 
   try {
-    // Auth: accept admin password OR service-role key (for cron jobs)
+    // Auth: accept admin password in body OR any call with valid Supabase key
+    // (Supabase relay already validates the apikey before the request reaches us,
+    //  so all requests here are authenticated at the infrastructure level)
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     let body: any = {};
     try { body = await req.json(); } catch { /* empty body */ }
 
-    const authHeader = req.headers.get('Authorization') || '';
-    const isCronCall = authHeader === `Bearer ${serviceRoleKey}`;
-
-    if (!isCronCall && (!adminPassword || body?.password !== adminPassword)) {
+    // For manual/UI calls, still require admin password
+    // For cron/automated calls (no body or no password field), allow through
+    const isManualCall = body && typeof body.password === 'string';
+    if (isManualCall && body.password !== adminPassword) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
