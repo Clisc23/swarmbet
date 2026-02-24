@@ -1,11 +1,17 @@
 <!doctype html>
 <html lang="en" class="dark">
   <head>
-    <script type="module">
-      import { Buffer } from "buffer";
-      import process from "process";
-      window.Buffer = Buffer;
-      window.process = process;
+    <script>
+      // Shim process.nextTick before any module loads (Web3Auth requires it)
+      window.process = window.process || {};
+      window.process.env = window.process.env || {};
+      if (!window.process.nextTick) {
+        window.process.nextTick = function(fn) {
+          var args = [];
+          for (var i = 1; i < arguments.length; i++) args.push(arguments[i]);
+          setTimeout(function() { fn.apply(null, args); }, 0);
+        };
+      }
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
