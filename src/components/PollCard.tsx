@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { getCategoryEmoji, getTimeRemaining } from '@/lib/helpers';
-import { Clock, Users, ShieldCheck, TrendingUp, CheckCircle2, XCircle } from 'lucide-react';
+import { Clock, Users, ShieldCheck, TrendingUp, CheckCircle2, XCircle, ExternalLink } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 import { format } from 'date-fns';
 
@@ -50,6 +50,19 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
           </span>
           {isAnonymous && (
             <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+          )}
+          {isPolymarket && poll.polymarket_slug && (
+            <a
+              href={`https://polymarket.com/event/${poll.polymarket_slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-0.5 rounded-full bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-primary transition-colors"
+            >
+              <TrendingUp className="h-3 w-3" />
+              <span>Polymarket</span>
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
           )}
         </div>
         <span className="text-xs text-muted-foreground">Day {poll.day_number}</span>
