@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils';
 import { getCategoryEmoji, getTimeRemaining } from '@/lib/helpers';
-import { Clock, Users, ShieldCheck } from 'lucide-react';
+import { Clock, Users, ShieldCheck, TrendingUp, CheckCircle2, XCircle } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
+import { format } from 'date-fns';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
 
@@ -20,6 +21,10 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
   const isClosed = poll.status === 'closed' || poll.status === 'resolved';
   const isUpcoming = poll.status === 'upcoming';
   const isAnonymous = !!(poll as any).vocdoni_election_id;
+  const isPolymarket = !!poll.polymarket_event_id;
+  const hasActualOutcome = !!poll.actual_outcome_option_id;
+  const userMatchedOutcome = hasVoted && hasActualOutcome && userVotedOptionId === poll.actual_outcome_option_id;
+  const actualOutcomeOption = hasActualOutcome ? poll.poll_options?.find(o => o.id === poll.actual_outcome_option_id) : null;
   const sortedOptions = [...(poll.poll_options || [])].sort((a, b) => a.display_order - b.display_order);
 
   return (
@@ -64,12 +69,14 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
                            isClosed && isAnonymous && opt.vote_percentage ? Math.round(opt.vote_percentage) : null;
           const isWinner = opt.is_winner;
           const isConsensus = poll.crowd_consensus_option_id === opt.id;
+          const isActualOutcome = poll.actual_outcome_option_id === opt.id;
 
           return (
             <div
               key={opt.id}
               className={cn(
                 'relative overflow-hidden rounded-xl border px-3 py-2 text-sm transition-all',
+                isActualOutcome ? 'border-green-500/50 bg-green-500/10' :
                 isSelected ? 'border-primary/50 bg-primary/5' :
                 isWinner ? 'border-primary/30 bg-primary/5' :
                 'border-border/50 bg-surface/50'
@@ -80,6 +87,7 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
                 <div
                   className={cn(
                     'absolute inset-y-0 left-0 transition-all duration-500',
+                    isActualOutcome ? 'bg-green-500/15' :
                     isWinner ? 'bg-primary/10' : 'bg-muted/30'
                   )}
                   style={{ width: `${percentage}%` }}
@@ -88,9 +96,10 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
               <div className="relative flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   {opt.flag_emoji && <span>{opt.flag_emoji}</span>}
-                  <span className={cn('font-medium', isSelected && 'text-primary')}>{opt.label}</span>
+                  <span className={cn('font-medium', isSelected && 'text-primary', isActualOutcome && 'text-green-400')}>{opt.label}</span>
                   {isSelected && <span className="text-[10px] text-primary">✓ Your pick</span>}
                   {isConsensus && <span className="text-[10px] text-primary">👥 Consensus</span>}
+                  {isActualOutcome && <span className="text-[10px] font-semibold text-green-400">✅ Actual outcome</span>}
                 </div>
                 {percentage !== null && (
                   <span className="font-mono text-xs text-muted-foreground">{percentage}%</span>
@@ -100,6 +109,39 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
           );
         })}
       </div>
+
+      {/* Polymarket Resolution Banner */}
+      {isPolymarket && hasActualOutcome && hasVoted && (
+        <div className={cn(
+          'mb-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs',
+          userMatchedOutcome 
+            ? 'border-green-500/30 bg-green-500/10 text-green-400'
+            : 'border-destructive/30 bg-destructive/10 text-destructive'
+        )}>
+          {userMatchedOutcome ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : (
+            <XCircle className="h-4 w-4 shrink-0" />
+          )}
+          <div className="flex-1">
+            <span className="font-semibold">
+              {userMatchedOutcome ? 'You matched the real-world outcome!' : 'Your prediction didn\'t match the outcome'}
+            </span>
+            {userMatchedOutcome && (
+              <span className="ml-1 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[10px] font-bold text-green-400">+10,000 pts</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Polymarket resolved date */}
+      {isPolymarket && hasActualOutcome && poll.resolved_at && (
+        <div className="mb-3 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <TrendingUp className="h-3 w-3" />
+          <span>Polymarket resolved {format(new Date(poll.resolved_at), 'MMM d, yyyy')}</span>
+          {actualOutcomeOption && <span>· Outcome: <span className="font-semibold text-green-400">{actualOutcomeOption.label}</span></span>}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -139,8 +181,11 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
             </div>
           )}
           {hasVoted && (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-              +1,000 pts
+            <span className={cn(
+              'rounded-full px-2 py-0.5 text-[10px] font-semibold',
+              userMatchedOutcome ? 'bg-green-500/10 text-green-400' : 'bg-primary/10 text-primary'
+            )}>
+              {userMatchedOutcome ? '+11,000 pts' : hasVoted && poll.crowd_consensus_option_id === userVotedOptionId ? '+6,000 pts' : '+1,000 pts'}
             </span>
           )}
         </div>
