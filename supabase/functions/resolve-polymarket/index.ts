@@ -38,7 +38,7 @@ serve(async (req) => {
     const { data: polls, error: pollsError } = await supabase
       .from('polls')
       .select('*, poll_options!poll_options_poll_id_fkey(*)')
-      .eq('status', 'resolved')
+      .in('status', ['resolved', 'closed'])
       .is('actual_outcome_option_id', null)
       .not('polymarket_event_id', 'is', null);
 
