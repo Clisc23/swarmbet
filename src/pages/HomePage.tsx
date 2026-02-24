@@ -10,13 +10,12 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Flame, Target, TrendingUp, Calendar } from 'lucide-react';
 import { formatPoints } from '@/lib/helpers';
-import { handleAnonymousVote } from '@/lib/voting';
 import type { Tables } from '@/integrations/supabase/types';
 
 type Poll = Tables<'polls'> & { poll_options: Tables<'poll_options'>[] };
 
 export default function HomePage() {
-  const { profile, refreshProfile, web3authProvider, walletAddress } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const { data: polls, isLoading } = usePolls();
   const { data: userVotes } = useUserVotes(profile?.id);
   const [votingPoll, setVotingPoll] = useState<Poll | null>(null);
@@ -30,26 +29,15 @@ export default function HomePage() {
   const activePoll = polls?.find((p) => p.status === 'active');
   const recentPolls = polls?.filter((p) => p.status !== 'upcoming').slice(0, 5) || [];
 
-  const handleSubmitVote = useCallback(async (optionId: string, confidence: string, optionIndex?: number) => {
+  const handleSubmitVote = useCallback(async (optionId: string, confidence: string) => {
     if (!votingPoll) return;
     setSubmitting(true);
     try {
-      const isAnonymous = !!(votingPoll as any).vocdoni_election_id;
-      let vocdoniVoteId: string | undefined;
-
-      if (isAnonymous && optionIndex !== undefined) {
-        vocdoniVoteId = await handleAnonymousVote(votingPoll, optionIndex, web3authProvider, walletAddress!);
-        localStorage.setItem(`vote_${votingPoll.id}`, optionId);
-      }
-
-      // Always send option_id for non-anonymous polls;
-      // for anonymous polls the option is recorded on-chain only
       const { data, error } = await supabase.functions.invoke('submit-vote', {
         body: {
           poll_id: votingPoll.id,
-          option_id: isAnonymous ? undefined : optionId,
+          option_id: optionId,
           confidence,
-          vocdoni_vote_id: vocdoniVoteId,
         },
       });
 
@@ -65,9 +53,7 @@ export default function HomePage() {
       }
 
       toast.success(`+${formatPoints(data.points_earned)} points! 🎯`, {
-        description: isAnonymous
-          ? `Anonymous vote recorded 🛡️ Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''}`
-          : `Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''} 🔥`,
+        description: `Streak: ${data.current_streak} day${data.current_streak > 1 ? 's' : ''} 🔥`,
       });
 
       setVotingPoll(null);
@@ -84,7 +70,7 @@ export default function HomePage() {
 
   const handleForceClose = useCallback(async (pollId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } }); // Note: close-polls now requires admin password; this call will fail for non-admin users
+      const { data, error } = await supabase.functions.invoke('close-polls', { body: { force_poll_id: pollId } });
       if (error) throw error;
       toast.success('Poll closed & resolved! 🎉');
       queryClient.invalidateQueries({ queryKey: ['polls'] });
@@ -117,7 +103,6 @@ export default function HomePage() {
       <Header />
 
       <main className="mx-auto max-w-md px-4 py-4 space-y-6">
-        {/* Stats strip */}
         {profile && (
           <div className="grid grid-cols-4 gap-2">
             {[
@@ -135,7 +120,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Active Poll */}
         {activePoll && (
           <section>
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -152,7 +136,6 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Prize pool banner */}
         <div className="glass rounded-2xl p-4 text-center">
           <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Campaign Prize Pool</p>
           <p className="text-3xl font-bold text-primary text-glow">3 ETH</p>
@@ -166,7 +149,6 @@ export default function HomePage() {
           <p className="mt-1 text-[10px] text-muted-foreground">{30 - campaignDay} days remaining</p>
         </div>
 
-        {/* Recent Polls */}
         {recentPolls.length > 0 && (
           <section>
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -216,7 +198,6 @@ export default function HomePage() {
 
       <BottomNav />
 
-      {/* Vote Sheet */}
       {votingPoll && (
         <VoteSheet
           poll={votingPoll}
