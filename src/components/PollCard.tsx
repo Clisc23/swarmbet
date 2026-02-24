@@ -25,6 +25,7 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
   const hasActualOutcome = !!poll.actual_outcome_option_id;
   const userMatchedOutcome = hasVoted && hasActualOutcome && userVotedOptionId === poll.actual_outcome_option_id;
   const actualOutcomeOption = hasActualOutcome ? poll.poll_options?.find(o => o.id === poll.actual_outcome_option_id) : null;
+  const consensusOption = poll.crowd_consensus_option_id ? poll.poll_options?.find(o => o.id === poll.crowd_consensus_option_id) : null;
   const sortedOptions = [...(poll.poll_options || [])].sort((a, b) => a.display_order - b.display_order);
 
   return (
@@ -123,36 +124,85 @@ export function PollCard({ poll, userVotedOptionId, onVote, onForceClose, onReop
         })}
       </div>
 
-      {/* Polymarket Resolution Banner */}
-      {isPolymarket && hasActualOutcome && hasVoted && (
-        <div className={cn(
-          'mb-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs',
-          userMatchedOutcome 
-            ? 'border-green-500/30 bg-green-500/10 text-green-400'
-            : 'border-destructive/30 bg-destructive/10 text-destructive'
-        )}>
-          {userMatchedOutcome ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
-          ) : (
-            <XCircle className="h-4 w-4 shrink-0" />
-          )}
-          <div className="flex-1">
-            <span className="font-semibold">
-              {userMatchedOutcome ? 'You matched the real-world outcome!' : 'Your prediction didn\'t match the outcome'}
-            </span>
-            {userMatchedOutcome && (
-              <span className="ml-1 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[10px] font-bold text-green-400">+10,000 pts</span>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Resolution Summary for Polymarket polls */}
+      {isPolymarket && isClosed && (
+        <div className="mb-3 space-y-2">
+          {/* Dual resolution badges */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* SwarmBet Consensus */}
+            <div className={cn(
+              'rounded-xl border px-3 py-2',
+              consensusOption ? 'border-primary/30 bg-primary/5' : 'border-border/50 bg-surface/50'
+            )}>
+              <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                <Users className="h-3 w-3" />
+                Swarm Consensus
+              </div>
+              <div className="text-xs font-medium">
+                {consensusOption ? (
+                  <span className="flex items-center gap-1">
+                    {consensusOption.flag_emoji && <span>{consensusOption.flag_emoji}</span>}
+                    {consensusOption.label}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">No consensus</span>
+                )}
+              </div>
+            </div>
 
-      {/* Polymarket resolved date */}
-      {isPolymarket && hasActualOutcome && poll.resolved_at && (
-        <div className="mb-3 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-          <TrendingUp className="h-3 w-3" />
-          <span>Polymarket resolved {format(new Date(poll.resolved_at), 'MMM d, yyyy')}</span>
-          {actualOutcomeOption && <span>· Outcome: <span className="font-semibold text-green-400">{actualOutcomeOption.label}</span></span>}
+            {/* Polymarket Outcome */}
+            <div className={cn(
+              'rounded-xl border px-3 py-2',
+              hasActualOutcome ? 'border-green-500/30 bg-green-500/5' : 'border-border/50 bg-surface/50'
+            )}>
+              <div className={cn(
+                'mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider',
+                hasActualOutcome ? 'text-green-400' : 'text-muted-foreground'
+              )}>
+                <TrendingUp className="h-3 w-3" />
+                Polymarket
+              </div>
+              <div className="text-xs font-medium">
+                {actualOutcomeOption ? (
+                  <span className="flex items-center gap-1 text-green-400">
+                    {actualOutcomeOption.flag_emoji && <span>{actualOutcomeOption.flag_emoji}</span>}
+                    {actualOutcomeOption.label}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">Pending…</span>
+                )}
+              </div>
+              {hasActualOutcome && poll.resolved_at && (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  {format(new Date(poll.resolved_at), 'MMM d, yyyy')}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* User outcome match banner */}
+          {hasActualOutcome && hasVoted && (
+            <div className={cn(
+              'flex items-center gap-2 rounded-xl border px-3 py-2 text-xs',
+              userMatchedOutcome 
+                ? 'border-green-500/30 bg-green-500/10 text-green-400'
+                : 'border-destructive/30 bg-destructive/10 text-destructive'
+            )}>
+              {userMatchedOutcome ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : (
+                <XCircle className="h-4 w-4 shrink-0" />
+              )}
+              <div className="flex-1">
+                <span className="font-semibold">
+                  {userMatchedOutcome ? 'You matched the real-world outcome!' : 'Your prediction didn\'t match the outcome'}
+                </span>
+                {userMatchedOutcome && (
+                  <span className="ml-1 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[10px] font-bold text-green-400">+10,000 pts</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
