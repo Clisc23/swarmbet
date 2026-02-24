@@ -163,9 +163,16 @@ serve(async (req) => {
       if (!verifyRes.ok) {
         const verifyBody = await verifyRes.text();
         console.error('World ID verification failed:', verifyRes.status, verifyBody);
-        return new Response(JSON.stringify({ error: 'Verification failed' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        // "max_verifications_reached" means this nullifier was already verified
+        // previously — treat as valid (the proof was accepted before, account
+        // creation just didn't complete).
+        const isAlreadyVerified = verifyBody.includes('max_verifications_reached');
+        if (!isAlreadyVerified) {
+          return new Response(JSON.stringify({ error: 'Verification failed' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        console.log('Nullifier already verified previously, proceeding');
       }
     }
 
