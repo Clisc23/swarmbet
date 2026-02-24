@@ -43,7 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const connectingRef = useRef(false);
 
-  const { provider: web3authProvider, isConnected: web3authConnected, isInitialized } = useWeb3Auth();
+  const { provider: web3authProvider, isConnected: web3authConnected, status: web3authStatus, web3Auth } = useWeb3Auth() as any;
   const { connectTo } = useWeb3AuthConnect();
 
   // Derive wallet address from Web3Auth provider when connected
@@ -74,30 +74,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     deriveAddress();
   }, [web3authConnected, web3authProvider]);
 
-  // Auto-connect wallet when profile loaded and Web3Auth is initialized but not connected
+  // Wait for the AUTH connector to be ready
+  const waitForAuthConnector = async (maxWaitMs = 30000): Promise<boolean> => {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      try {
+        const connectors = web3Auth?.connectors as any[];
+        const authConnector = connectors?.find((c: any) => c.name === 'auth');
+        if (authConnector?.status === 'ready' || authConnector?.status === 'connected') {
+          return true;
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return false;
+  };
+
+  // Auto-connect wallet when profile loaded and Web3Auth is READY but not connected
   useEffect(() => {
     if (!profile) return;
     if (web3authConnected) return;
-    if (!isInitialized) return;
+    if (web3authStatus !== 'ready') return;
+    if (!web3Auth) return;
+
+    let cancelled = false;
 
     const tryConnect = async () => {
       if (connectingRef.current) return;
       connectingRef.current = true;
       try {
+        console.log('[Web3Auth] Waiting for AUTH connector to be ready...');
+        const ready = await waitForAuthConnector();
+        if (!ready || cancelled) {
+          console.warn('[Web3Auth] AUTH connector did not become ready in time');
+          return;
+        }
+
         console.log('[Web3Auth] Minting fresh JWT...');
         const { data, error } = await supabase.functions.invoke('mint-web3auth-jwt', {});
         if (error || !data?.jwt) {
           console.error('[Web3Auth] Failed to mint JWT:', error || data);
           return;
         }
-        console.log('[Web3Auth] JWT minted, connecting wallet via hook...');
+        console.log('[Web3Auth] JWT minted, connecting wallet...');
         await connectTo(WALLET_CONNECTORS.AUTH, {
           authConnection: AUTH_CONNECTION.CUSTOM,
           authConnectionId: WEB3AUTH_CUSTOM_AUTH_CONNECTION_ID,
           idToken: data.jwt,
         } as any);
         console.log('[Web3Auth] connectTo completed');
-      } catch (err) {
+      } catch (err: any) {
         console.error('[Web3Auth] Wallet connection failed:', err);
       } finally {
         connectingRef.current = false;
@@ -105,7 +131,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     tryConnect();
-  }, [profile, web3authConnected, isInitialized, connectTo]);
+    return () => { cancelled = true; };
+  }, [profile, web3authConnected, web3authStatus, web3Auth, connectTo]);
 
   const fetchProfile = async (uid: string) => {
     const { data } = await supabase
