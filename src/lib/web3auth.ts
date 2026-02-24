@@ -29,12 +29,6 @@ export const web3AuthConfig: Web3AuthContextConfig = {
         [WALLET_CONNECTORS.AUTH]: {
           label: 'Auth',
           showOnModal: false,
-          loginMethods: {
-            custom: {
-              name: 'WorldID Login',
-              showOnModal: false,
-            },
-          },
         },
       },
     },
