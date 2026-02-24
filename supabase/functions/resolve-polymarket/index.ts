@@ -15,12 +15,16 @@ serve(async (req) => {
   }
 
   try {
-    // Admin password check
+    // Auth: accept admin password OR service-role key (for cron jobs)
     const adminPassword = Deno.env.get('ADMIN_PASSWORD');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     let body: any = {};
     try { body = await req.json(); } catch { /* empty body */ }
 
-    if (!adminPassword || body?.password !== adminPassword) {
+    const authHeader = req.headers.get('Authorization') || '';
+    const isCronCall = authHeader === `Bearer ${serviceRoleKey}`;
+
+    if (!isCronCall && (!adminPassword || body?.password !== adminPassword)) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
